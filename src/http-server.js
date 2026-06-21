@@ -315,10 +315,10 @@ export class HttpServer {
       if (sess.role !== 'superadmin') return this._err(res, 403, '仅超级管理员可修改图片处理设置')
       const scope = d.scope || 'global'
       const id = d.id != null ? +d.id : 0
-      const globalCols = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs',
+      const globalCols = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs','ocr_url',
                           'nsfw_enabled','nsfw_url','nsfw_key','nsfw_threshold',
                           'llm_enabled','llm_url','llm_key','llm_model','llm_prompt']
-      const scopedCols = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs',
+      const scopedCols = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs','ocr_url',
                           'nsfw_enabled','nsfw_threshold','llm_enabled']
       const allowed = scope === 'global' ? globalCols : scopedCols
       const fields = {}
