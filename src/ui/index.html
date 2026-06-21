@@ -821,9 +821,14 @@ async function renderImageConfig() {
   }
   sb.appendChild(scopeSel); topCard.appendChild(sb)
   if(imgScope!==0) topCard.appendChild(h('p',{style:'color:var(--dim);font-size:12px;margin-top:6px'},'⚠ 单群设置仅覆盖开关，API URL / Key 始终使用全局配置'))
+  if(!isSA) topCard.appendChild(h('p',{style:'color:var(--dim);font-size:12px;margin-top:6px'},'仅超级管理员可修改图片处理设置（当前为只读模式）'))
   M.appendChild(topCard)
 
-  const data = await api('/api/image-rules/get', { groupId: imgScope }); if(!data) return
+  const data = await api('/api/image-rules/get', { groupId: imgScope })
+  if (!data) {
+    M.appendChild(h('div',{cls:'card',innerHTML:'<div class="empty">⚠ 无法加载配置，请重启 group-manager 服务后刷新。</div>'}))
+    return
+  }
   const r = data.rules || {}
 
   // ── helper: feature card ──
