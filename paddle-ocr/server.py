@@ -9,7 +9,7 @@ USE_GPU = os.getenv('USE_GPU', '0') == '1'
 LANG    = os.getenv('OCR_LANG', 'ch')   # ch=简体中文, japan=日文, en=英文
 
 print(f'[PaddleOCR] 初始化 lang={LANG} use_gpu={USE_GPU}')
-_ocr = PaddleOCR(use_angle_cls=True, lang=LANG, use_gpu=USE_GPU, show_log=False)
+_ocr = PaddleOCR(use_angle_cls=True, lang=LANG, use_gpu=USE_GPU)
 print('[PaddleOCR] 准备就绪')
 
 class OcrReq(BaseModel):
