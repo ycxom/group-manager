@@ -126,11 +126,11 @@ export class ManagementServer {
       if (hasImage) {
         this._reply(ws, true, { action: 'noop' }, _id)
         this.recall.processImageMessage(event)
-          .then(action => {
-            if (action) {
-              this._pushToBots({ event: { type: 'action', ...this._buildBotResult(action) } })
+          .then(result => {
+            if (result?.action) {
+              this._pushToBots({ event: { type: 'action', ...this._buildBotResult(result) } })
             } else {
-              this.recall._emit({ type: 'scan', groupId, userId })
+              this.recall._emit({ type: 'scan', groupId, userId, ocr: result?.ocr || null, qr: result?.qr || null })
             }
           })
           .catch(e => console.error('[Mgmt] 异步图片分析异常:', e.message))

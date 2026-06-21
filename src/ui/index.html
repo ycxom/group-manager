@@ -204,7 +204,11 @@ function addLog(ev) {
     el.textContent = `[${t}] 踢出 用户${ev.userId} 累计${ev.violations}次`
   } else if (ev.type === 'scan') {
     el.style.color = 'var(--dim)'
-    el.textContent = `[${t}] 群${ev.groupId} 用户${ev.userId} 扫描通过`
+    const extra = [
+      ev.ocr ? `OCR: ${ev.ocr.replace(/\n/g, ' ').slice(0, 100)}` : '',
+      ev.qr  ? `QR: ${ev.qr.slice(0, 80)}`  : '',
+    ].filter(Boolean).join(' | ')
+    el.textContent = `[${t}] 群${ev.groupId} 用户${ev.userId} 扫描通过${extra ? ' — ' + extra : ''}`
   } else if (ev.type === 'info') {
     el.style.color = 'var(--dim)'
     el.textContent = `[${t}] ${ev.text}`

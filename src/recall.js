@@ -67,22 +67,23 @@ export class RecallManager {
       const r = await analyzeImage(url, rules)
 
       if ((rules.qr_enabled || rules.qr_block_all) && r.qr !== null) {
-        if (rules.qr_block_all) return { hit: true, content: `[QR] ${r.qr.slice(0, 80) || '二维码'}` }
-        if (qrKeywords.length && this._match(r.qr, qrKeywords)) return { hit: true, content: `[QR] ${r.qr.slice(0, 80)}` }
+        if (rules.qr_block_all) return { hit: true, content: `[QR] ${r.qr.slice(0, 80) || '二维码'}`, ocr: r.ocr, qr: r.qr }
+        if (qrKeywords.length && this._match(r.qr, qrKeywords)) return { hit: true, content: `[QR] ${r.qr.slice(0, 80)}`, ocr: r.ocr, qr: r.qr }
       }
       if (rules.ocr_enabled && r.ocr) {
-        if (ocrKeywords.length && this._match(r.ocr, ocrKeywords)) return { hit: true, content: `[OCR] ${r.ocr.slice(0, 80)}` }
+        if (ocrKeywords.length && this._match(r.ocr, ocrKeywords)) return { hit: true, content: `[OCR] ${r.ocr.slice(0, 80)}`, ocr: r.ocr, qr: r.qr }
       }
       if (rules.nsfw_enabled && r.nsfw) {
-        return { hit: true, content: '[涩图] 检测到不当内容' }
+        return { hit: true, content: '[涩图] 检测到不当内容', ocr: r.ocr, qr: r.qr }
       }
       if (rules.llm_enabled && r.llm?.startsWith('VIOLATION')) {
-        return { hit: true, content: `[LLM] ${r.llm.replace('VIOLATION:', '').trim().slice(0, 80)}` }
+        return { hit: true, content: `[LLM] ${r.llm.replace('VIOLATION:', '').trim().slice(0, 80)}`, ocr: r.ocr, qr: r.qr }
       }
+      return { hit: false, ocr: r.ocr, qr: r.qr }
     } catch (e) {
       console.error('[RecallMgr] 图片分析异常:', e.message)
+      return { hit: false }
     }
-    return { hit: false }
   }
 
   // ──────── 主流程 ────────
@@ -152,7 +153,7 @@ export class RecallManager {
         result = await this._checkImage(seg.url, imageRules, qrKeywords, ocrKeywords)
       }
     }
-    if (!result.hit) return null
+    if (!result.hit) return { action: null, ocr: result.ocr || null, qr: result.qr || null }
     return this._applyViolation(result, event)
   }
 
