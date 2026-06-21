@@ -8,8 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple \
     paddlepaddle==2.6.2 \
-    "paddleocr>=2.8.0" \
+    "paddleocr<3.0.0" \
     fastapi==0.115.0 \
     "uvicorn[standard]==0.30.6" \
     httpx==0.27.0

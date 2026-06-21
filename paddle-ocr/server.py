@@ -5,11 +5,13 @@ from paddleocr import PaddleOCR
 
 app = FastAPI()
 
-USE_GPU = os.getenv('USE_GPU', '0') == '1'
-LANG    = os.getenv('OCR_LANG', 'ch')   # ch=简体中文, japan=日文, en=英文
+USE_GPU   = os.getenv('USE_GPU', '0') == '1'
+LANG      = os.getenv('OCR_LANG', 'ch')      # ch=简体中文, japan=日文, en=英文
+MIN_CONF  = float(os.getenv('OCR_MIN_CONF', '0.7'))   # 置信度阈值，越高越严格
+MIN_LEN   = int(os.getenv('OCR_MIN_LEN', '2'))         # 最短行字符数，过滤单字噪声
 
 print(f'[PaddleOCR] 初始化 lang={LANG} use_gpu={USE_GPU}')
-_ocr = PaddleOCR(use_angle_cls=True, lang=LANG, use_gpu=USE_GPU)
+_ocr = PaddleOCR(use_angle_cls=True, lang=LANG, use_gpu=USE_GPU, show_log=False)
 print('[PaddleOCR] 准备就绪')
 
 class OcrReq(BaseModel):
@@ -48,7 +50,7 @@ async def ocr(req: OcrReq):
             for line in (page or []):
                 if line and len(line) >= 2:
                     text, conf = line[1]
-                    if conf >= 0.5:
+                    if conf >= MIN_CONF and len(text) >= MIN_LEN:
                         lines.append(text)
         return {'text': '\n'.join(lines)}
     except Exception as e:
