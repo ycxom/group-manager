@@ -520,7 +520,7 @@ async function renderViolations() {
   }
   card.appendChild(sb)
   if(!viols.length){card.appendChild(h('div',{cls:'empty'},'暂无违规记录'));M.appendChild(card);return}
-  const t=h('table'); t.innerHTML='<thead><tr><th>QQ号</th><th>群号</th><th>次数</th><th>最近</th><th>操作</th></tr></thead>'
+  const t=h('table'); t.innerHTML='<thead><tr><th>QQ号</th><th>群号</th><th>次数</th><th>触发内容</th><th>最近</th><th>操作</th></tr></thead>'
   const tb=h('tbody')
   viols.forEach(v=>{
     const tr=h('tr')
@@ -529,7 +529,8 @@ async function renderViolations() {
       await api('/api/violation/clear',{userId:v.user_id,groupId:v.group_id}); showOk(`已清除 ${v.user_id}`); renderViolations()
     }},'清除')
     const td=h('td');td.appendChild(rb)
-    tr.innerHTML=`<td>${v.user_id}</td><td>${v.group_id}</td><td>${v.count}${bar}</td><td>${dt(v.last_at)}</td>`
+    const content = v.last_content || '—'
+    tr.innerHTML=`<td>${v.user_id}</td><td>${v.group_id}</td><td>${v.count}${bar}</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${content.replace(/"/g,'&quot;')}">${content}</td><td>${dt(v.last_at)}</td>`
     tr.appendChild(td); tb.appendChild(tr)
   })
   t.appendChild(tb); card.appendChild(t); M.appendChild(card)

@@ -87,29 +87,92 @@ export class RecallManager {
 
   // ──────── 主流程 ────────
 
+  _guard(event) {
+    const { groupId, userId, senderRole } = event
+    if (!this.db.isGroupEnabled(groupId)) return false
+    if (this.db.isExempt(groupId, userId)) return false
+    if (senderRole === 'admin' || senderRole === 'owner') return false
+    return true
+  }
+
+  _applyViolation(result, event) {
+    const { groupId, userId, messageId } = event
+    if (this.config.get('debug', false)) {
+      console.log(`[RecallMgr] DEBUG 群${groupId} 用户${userId}: ${result.content}`)
+      return null
+    }
+    const count = this.db.incrementViolation(userId, groupId, result.content)
+    this._emit({ type: 'recall', groupId, userId, content: result.content, violations: count, messageId })
+    const group = this.db.getGroup(groupId)
+    const max = group?.max_violations ?? this.config.get('maxViolations', 3)
+    if (count >= max) {
+      this.db.clearViolation(userId, groupId)
+      this._emit({ type: 'kick', groupId, userId, violations: count })
+      return { action: 'recall+kick', messageId, groupId, userId }
+    }
+    return { action: 'recall', messageId, groupId, userId }
+  }
+
+  /** 同步检测：文字 / JSON / 转发消息，不检测图片，毫秒级返回 */
+  async processTextMessage(event) {
+    if (!this._guard(event)) return null
+    const { groupId, messages } = event
+    const keywords = this.db.getEffectiveKeywords(groupId)
+    if (!keywords.length) return null
+
+    let result = { hit: false }
+    for (const seg of messages) {
+      if (result.hit) break
+      if (seg.type === 'forward' || seg.type === 'multimsg' || seg.type === 'long_msg') {
+        const nodes = seg.nodes?.length ? seg.nodes : null
+        if (nodes) result = await this._scanNodes(nodes, keywords)
+      } else if (seg.type !== 'image') {
+        result = this.checkSegment(seg, keywords)
+      }
+    }
+    if (!result.hit) return null
+    return this._applyViolation(result, event)
+  }
+
+  /** 异步检测：仅图片，可能耗时数秒，调用方应立即响应 bot 后再 await 此函数 */
+  async processImageMessage(event) {
+    if (!this._guard(event)) return null
+    const { groupId, messages } = event
+    const qrKeywords  = this.db.getEffectiveQRKeywords(groupId)
+    const ocrKeywords = this.db.getEffectiveOCRKeywords(groupId)
+    const imageRules  = this.db.getImageRules(groupId)
+    const hasImgFeat  = imageRules && (imageRules.qr_enabled || imageRules.qr_block_all ||
+                        imageRules.ocr_enabled || imageRules.nsfw_enabled || imageRules.llm_enabled)
+    if (!hasImgFeat) return null
+
+    let result = { hit: false }
+    for (const seg of messages) {
+      if (result.hit) break
+      if (seg.type === 'image' && seg.url) {
+        result = await this._checkImage(seg.url, imageRules, qrKeywords, ocrKeywords)
+      }
+    }
+    if (!result.hit) return null
+    return this._applyViolation(result, event)
+  }
+
   /**
+   * 兼容旧调用：文字 + 图片顺序检测（图片不异步，适用于非 WS 场景）
    * @param {{ groupId, userId, senderRole, messageId, messages }} event
    * @param {(id:string)=>Promise} fetchForward
-   * @returns {{ action:'recall'|'recall+kick', messageId, groupId, userId }|null}
    */
   async processMessage(event, fetchForward) {
-    const { groupId, userId, senderRole, messages, messageId } = event
-
-    if (!this.db.isGroupEnabled(groupId)) return null
-    if (this.db.isExempt(groupId, userId)) return null
-    if (senderRole === 'admin' || senderRole === 'owner') return null
-
+    if (!this._guard(event)) return null
+    const { groupId, messages } = event
     const keywords    = this.db.getEffectiveKeywords(groupId)
     const qrKeywords  = this.db.getEffectiveQRKeywords(groupId)
     const ocrKeywords = this.db.getEffectiveOCRKeywords(groupId)
     const imageRules  = this.db.getImageRules(groupId)
     const hasImgFeat  = imageRules && (imageRules.qr_enabled || imageRules.qr_block_all ||
                         imageRules.ocr_enabled || imageRules.nsfw_enabled || imageRules.llm_enabled)
-
     if (keywords.length === 0 && !hasImgFeat) return null
 
     let result = { hit: false }
-
     for (const seg of messages) {
       if (result.hit) break
       if (seg.type === 'forward' || seg.type === 'multimsg' || seg.type === 'long_msg') {
@@ -121,27 +184,8 @@ export class RecallManager {
         if (keywords.length) result = this.checkSegment(seg, keywords)
       }
     }
-
     if (!result.hit) return null
-
-    if (this.config.get('debug', false)) {
-      console.log(`[RecallMgr] DEBUG 群${groupId} 用户${userId}: ${result.content}`)
-      return null
-    }
-
-    const count = this.db.incrementViolation(userId, groupId)
-    this._emit({ type: 'recall', groupId, userId, content: result.content, violations: count })
-
-    const group = this.db.getGroup(groupId)
-    const max = group?.max_violations ?? this.config.get('maxViolations', 3)
-
-    if (count >= max) {
-      this.db.clearViolation(userId, groupId)
-      this._emit({ type: 'kick', groupId, userId, violations: count })
-      return { action: 'recall+kick', messageId, groupId, userId }
-    }
-
-    return { action: 'recall', messageId, groupId, userId }
+    return this._applyViolation(result, event)
   }
 
   // ──────── 群内管理命令 ────────

@@ -37,25 +37,24 @@ async function fetchImage(url) {
 }
 
 // ── QR 码 ────────────────────────────────────────────────────────────────────
-async function extractQR(imageUrl) {
+async function extractQR(buf) {
   try {
-    const buf = await fetchImage(imageUrl)
-    const { Jimp } = await import('jimp')
+    const jimpMod = await import('jimp')
+    const Jimp = jimpMod.Jimp ?? jimpMod.default
     const img = await Jimp.read(buf)
     const { data, width, height } = img.bitmap
     const { default: jsQR } = await import('jsqr')
     const code = jsQR(new Uint8ClampedArray(data), width, height)
     return code ? code.data : null
   } catch (e) {
-    if (e.name !== 'AbortError') console.error('[ImageProc] QR 识别失败:', e.message)
+    console.error('[ImageProc] QR 识别失败:', e.message)
     return null
   }
 }
 
 // ── OCR（tesseract.js 本地识别）───────────────────────────────────────────────
-async function ocrLocal(imageUrl, langs) {
+async function ocrLocal(buf, langs) {
   try {
-    const buf = await fetchImage(imageUrl)
     const worker = await _getOCRWorker(langs)
     const { data: { text } } = await worker.recognize(buf)
     return text.trim() || null
@@ -131,12 +130,20 @@ export async function analyzeImage(imageUrl, rules) {
   if (!imageUrl || !rules) return out
 
   const tasks = []
-  if (rules.qr_enabled || rules.qr_block_all) {
-    tasks.push(extractQR(imageUrl).then(v => { out.qr = v }))
+
+  // QR 和 OCR 都需要原始图片 buffer，共享一次下载避免重复请求
+  const needsBuf = (rules.qr_enabled || rules.qr_block_all) || rules.ocr_enabled
+  if (needsBuf) {
+    const bufP = fetchImage(imageUrl)
+    if (rules.qr_enabled || rules.qr_block_all) {
+      tasks.push(bufP.then(buf => extractQR(buf)).then(v => { out.qr = v }).catch(e => { console.error('[ImageProc] QR 识别失败:', e.message) }))
+    }
+    if (rules.ocr_enabled) {
+      tasks.push(bufP.then(buf => ocrLocal(buf, rules.ocr_langs)).then(v => { out.ocr = v }).catch(e => { console.error('[ImageProc] OCR 失败:', e.message) }))
+    }
   }
-  if (rules.ocr_enabled) {
-    tasks.push(ocrLocal(imageUrl, rules.ocr_langs).then(v => { out.ocr = v }))
-  }
+
+  // NSFW 和 LLM 是外部 API，直接用 URL，与本地任务并行
   if (rules.nsfw_enabled && rules.nsfw_url) {
     tasks.push(checkNSFW(imageUrl, rules.nsfw_url, rules.nsfw_key, rules.nsfw_threshold).then(v => { out.nsfw = v }))
   }

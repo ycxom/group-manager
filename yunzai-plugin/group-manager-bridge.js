@@ -47,7 +47,27 @@ function _connect() {
     }
     if (msg.event) {
       const ev = msg.event
-      if (ev.type === 'recall') {
+      if (ev.type === 'action') {
+        // 图片异步分析完成后由服务端推送的撤回/踢出指令
+        if (ev.action === 'recall' || ev.action === 'recall+kick') {
+          try {
+            await Bot.pickGroup(ev.groupId).recallMsg(ev.messageId)
+            console.log(`[GM桥接] 异步撤回 群${ev.groupId} 用户${ev.userId}`)
+          } catch (err) {
+            console.error('[GM桥接] 异步撤回失败:', err.message)
+          }
+          if (ev.action === 'recall+kick') {
+            for (const gid of (ev.kickGroups || [])) {
+              try {
+                await Bot.pickGroup(gid).kickMember(ev.userId)
+                console.log(`[GM桥接] 异步踢出 群${gid} 用户${ev.userId}`)
+              } catch (err) {
+                console.error(`[GM桥接] 异步踢出失败 群${gid}:`, err.message)
+              }
+            }
+          }
+        }
+      } else if (ev.type === 'recall') {
         console.log(`[GM桥接] 撤回 群${ev.groupId} 用户${ev.userId} 第${ev.violations}次`)
       } else if (ev.type === 'kick') {
         console.log(`[GM桥接] 踢出 用户${ev.userId} 累计${ev.violations}次`)

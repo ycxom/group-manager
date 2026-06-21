@@ -38,10 +38,11 @@ CREATE TABLE IF NOT EXISTS exempt_users (
   UNIQUE(group_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS violations (
-  user_id  INTEGER NOT NULL,
-  group_id INTEGER NOT NULL,
-  count    INTEGER DEFAULT 0,
-  last_at  TEXT    DEFAULT (datetime('now','localtime')),
+  user_id      INTEGER NOT NULL,
+  group_id     INTEGER NOT NULL,
+  count        INTEGER DEFAULT 0,
+  last_content TEXT    DEFAULT '',
+  last_at      TEXT    DEFAULT (datetime('now','localtime')),
   PRIMARY KEY (user_id, group_id)
 );
 CREATE TABLE IF NOT EXISTS users (
@@ -160,8 +161,9 @@ export async function createDatabase(filePath) {
   const db  = new SQL.Database(raw)
   db.run(SCHEMA)
 
-  // Migration: add ocr_langs for existing databases that predate local OCR
+  // Migrations for columns added after initial release
   try { db.run("ALTER TABLE image_rules ADD COLUMN ocr_langs TEXT DEFAULT 'chi_sim+eng'") } catch {}
+  try { db.run("ALTER TABLE violations ADD COLUMN last_content TEXT DEFAULT ''") } catch {}
 
   const gm = new GM_Database(db, filePath)
   console.log('[DB] SQLite (sql.js) 初始化完成:', filePath)
@@ -461,11 +463,12 @@ class GM_Database {
     return this._get('SELECT count FROM violations WHERE user_id=? AND group_id=?', [userId, groupId])?.count || 0
   }
 
-  incrementViolation(userId, groupId) {
+  incrementViolation(userId, groupId, content = '') {
     this._run(`
-      INSERT INTO violations (user_id, group_id, count) VALUES (?, ?, 1)
-      ON CONFLICT(user_id, group_id) DO UPDATE SET count=count+1, last_at=datetime('now','localtime')
-    `, [userId, groupId])
+      INSERT INTO violations (user_id, group_id, count, last_content) VALUES (?, ?, 1, ?)
+      ON CONFLICT(user_id, group_id) DO UPDATE SET
+        count=count+1, last_at=datetime('now','localtime'), last_content=excluded.last_content
+    `, [userId, groupId, content])
     return this.getViolation(userId, groupId)
   }
 

@@ -114,28 +114,31 @@ export class ManagementServer {
       }
 
       const event = { groupId, userId, senderRole: senderRole || 'member', messageId, messages: segments || [] }
-      const action = await this.recall.processMessage(event, null)
 
-      if (!action) {
-        this.recall._emit({ type: 'scan', groupId, userId })
-        return this._reply(ws, true, { action: 'noop' }, _id)
+      // 文字检测同步完成（毫秒级）
+      const textAction = await this.recall.processTextMessage(event)
+      if (textAction) {
+        return this._reply(ws, true, this._buildBotResult(textAction), _id)
       }
 
-      const result = { action: action.action, messageId: action.messageId, groupId, userId }
-      if (action.action === 'recall+kick') {
-        // 若群属于组别，踢出该组别内所有群；否则仅踢出当前群
-        const catIds = db.getGroupCategoryIds(groupId)
-        if (catIds.length > 0) {
-          const kickSet = new Set()
-          for (const catId of catIds) {
-            for (const g of db.getCategoryGroups(catId)) kickSet.add(g.group_id)
-          }
-          result.kickGroups = [...kickSet]
-        } else {
-          result.kickGroups = [groupId]
-        }
+      // 含图片时立即回复 noop，图片分析在后台进行，完成后推送给 bot
+      const hasImage = (segments || []).some(s => s.type === 'image' && s.url)
+      if (hasImage) {
+        this._reply(ws, true, { action: 'noop' }, _id)
+        this.recall.processImageMessage(event)
+          .then(action => {
+            if (action) {
+              this._pushToBots({ event: { type: 'action', ...this._buildBotResult(action) } })
+            } else {
+              this.recall._emit({ type: 'scan', groupId, userId })
+            }
+          })
+          .catch(e => console.error('[Mgmt] 异步图片分析异常:', e.message))
+        return
       }
-      return this._reply(ws, true, result, _id)
+
+      this.recall._emit({ type: 'scan', groupId, userId })
+      return this._reply(ws, true, { action: 'noop' }, _id)
     }
 
     // ── 群组管理 ──
@@ -215,5 +218,31 @@ export class ManagementServer {
     }
 
     return this._reply(ws, false, `未知命令: ${cmd}`, _id)
+  }
+
+  // 根据 action 构建发给 bot 的结果（含 kickGroups 计算）
+  _buildBotResult(action) {
+    const result = { action: action.action, messageId: action.messageId, groupId: action.groupId, userId: action.userId }
+    if (action.action === 'recall+kick') {
+      const catIds = this.db.getGroupCategoryIds(action.groupId)
+      if (catIds.length > 0) {
+        const kickSet = new Set()
+        for (const catId of catIds) {
+          for (const g of this.db.getCategoryGroups(catId)) kickSet.add(g.group_id)
+        }
+        result.kickGroups = [...kickSet]
+      } else {
+        result.kickGroups = [action.groupId]
+      }
+    }
+    return result
+  }
+
+  // 仅向 bot 角色的 WS 客户端推送（用于图片异步结果）
+  _pushToBots(msg) {
+    const str = JSON.stringify(msg)
+    for (const ws of this._clients) {
+      if (ws.readyState === 1 && ws.role === 'bot') ws.send(str)
+    }
   }
 }
