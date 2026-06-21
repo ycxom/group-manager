@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>群管控制台</title>
+<style>
+:root{--bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--border:#30363d;--text:#c9d1d9;--dim:#8b949e;--blue:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--r:6px}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font:13px/1.5 'Segoe UI',system-ui,sans-serif}
+
+/* Login */
+#login{display:flex;align-items:center;justify-content:center;height:100%;background:var(--bg)}
+.lbox{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:36px 32px;width:340px;display:flex;flex-direction:column;gap:14px}
+.lbox h1{font-size:20px;text-align:center;letter-spacing:.5px}
+.lbox p{color:var(--dim);font-size:12px;text-align:center;margin-top:-6px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:11px;color:var(--dim);font-weight:500;text-transform:uppercase;letter-spacing:.5px}
+.lbox .warn{background:#2d1a00;border:1px solid var(--yellow);border-radius:var(--r);padding:8px 12px;color:var(--yellow);font-size:12px;display:none}
+#lerr{color:var(--red);font-size:12px;text-align:center;min-height:16px}
+
+/* App */
+#app{display:none;height:100%;flex-direction:column}
+header{display:flex;align-items:center;justify-content:space-between;padding:0 16px;height:44px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+header h1{font-size:15px;font-weight:600}
+.hright{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--dim)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+.dot.ok{background:var(--green)}
+.body{display:flex;flex:1;overflow:hidden}
+nav{width:160px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);padding:8px 0;overflow-y:auto}
+nav button{display:block;width:100%;text-align:left;padding:8px 16px;background:none;border:none;color:var(--dim);cursor:pointer;font-size:13px;border-left:3px solid transparent}
+nav button:hover{color:var(--text);background:var(--bg3)}
+nav button.active{border-left-color:var(--blue);color:var(--blue);background:var(--bg3)}
+nav hr{border:none;border-top:1px solid var(--border);margin:6px 8px}
+main{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+
+/* Event log */
+#log{flex-shrink:0;height:120px;background:var(--bg2);border-top:1px solid var(--border);display:flex;flex-direction:column}
+#log header{padding:4px 12px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+#logbody{flex:1;overflow-y:auto;padding:4px 12px;font-family:monospace;font-size:11px}
+.recall{color:var(--yellow)}.kick{color:var(--red)}
+
+/* Forms */
+input,select{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:var(--r);font-size:13px;outline:none}
+input:focus,select:focus{border-color:var(--blue)}
+input[type=number]{width:90px}
+button{padding:6px 12px;border-radius:var(--r);border:1px solid var(--border);cursor:pointer;font-size:12px;background:var(--bg3);color:var(--text)}
+button:hover{border-color:var(--blue);color:var(--blue)}
+button.primary{background:var(--blue);color:#000;border-color:var(--blue);font-weight:600}
+button.primary:hover{background:#79b8ff}
+button.danger{color:var(--red);border-color:transparent}
+button.danger:hover{border-color:var(--red)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 16px}
+.card h2{font-size:12px;font-weight:600;margin-bottom:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:6px 10px;font-weight:500;color:var(--dim);border-bottom:1px solid var(--border)}
+td{padding:6px 10px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg3)}
+.badge{display:inline-block;padding:1px 7px;border-radius:20px;font-size:11px;font-weight:600;background:var(--bg3);border:1px solid var(--border)}
+.badge.root,.badge.superadmin{color:var(--red);border-color:var(--red)}
+.badge.admin{color:var(--blue);border-color:var(--blue)}
+.badge.global{color:var(--green);border-color:var(--green)}
+.on{color:var(--green)}.off{color:var(--red)}
+.empty{color:var(--dim);text-align:center;padding:24px;font-size:12px}
+.sbar{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.sbar label{color:var(--dim);font-size:12px}
+
+/* Toast */
+#toast{position:fixed;bottom:132px;right:16px;background:var(--bg3);border:1px solid var(--border);padding:8px 16px;border-radius:var(--r);font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:100}
+#toast.show{opacity:1}
+
+/* Password modal */
+.modal-bg{position:fixed;inset:0;background:#0009;display:flex;align-items:center;justify-content:center;z-index:200}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:24px;width:320px;display:flex;flex-direction:column;gap:12px}
+.modal h3{font-size:15px}
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login">
+  <div class="lbox">
+    <h1>群管控制台</h1>
+    <p>Group Manager — 请使用账户登录</p>
+    <div class="warn" id="defwarn" style="display:none">⚠ 正在使用默认密码，请立即在「系统用户」页修改！</div>
+    <div class="field"><label>用户名</label><input id="lu" type="text" autocomplete="username" placeholder="admin"></div>
+    <div class="field"><label>密码</label><input id="lp" type="password" autocomplete="current-password" placeholder="••••••"></div>
+    <label class="row" style="font-size:12px"><input type="checkbox" id="remem" style="width:auto"> 记住用户名</label>
+    <button class="primary" id="lbtn">登录</button>
+    <div id="lerr"></div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <header>
+    <h1>群管控制台</h1>
+    <div class="hright">
+      <span class="dot" id="dot"></span>
+      <span id="stxt">未连接</span>
+      <span id="uname" style="color:var(--text)"></span>
+      <button id="pwbtn" style="font-size:11px">改密码</button>
+      <button id="lout" style="font-size:11px">退出</button>
+    </div>
+  </header>
+  <div id="appwarn" style="display:none;background:#2d1a00;border-bottom:1px solid var(--yellow);padding:7px 16px;color:var(--yellow);font-size:12px;flex-shrink:0">⚠ 正在使用默认密码，请前往「系统用户」页立即修改！</div>
+  <div class="body">
+    <nav>
+      <button data-p="dashboard" class="active">仪表板</button>
+      <button data-p="groups">群组</button>
+      <hr>
+      <button data-p="keywords">关键词</button>
+      <button data-p="exempt">豁免用户</button>
+      <hr>
+      <button data-p="violations">违规记录</button>
+      <hr>
+      <button data-p="categories">组别</button>
+      <button data-p="users">系统用户</button>
+    </nav>
+    <main id="main"></main>
+  </div>
+  <div id="log">
+    <header>实时事件<button class="danger" id="clrlog" style="padding:0 6px;font-size:11px">清空</button></header>
+    <div id="logbody"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────
+let me = null        // { username, role }
+let groups = []      // QQ groups visible to current user
+let categories = []  // categories visible to current user
+let es = null        // EventSource
+
+async function refreshMeta() {
+  const [gl, cl] = await Promise.all([api('/api/group/list'), api('/api/category/list')])
+  groups = gl?.groups || []
+  categories = cl?.categories || []
+}
+
+// ── API (POST fetch) ─────────────────────────────────────────────────────
+async function api(path, body = {}) {
+  try {
+    const r = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body)
+    })
+    const data = await r.json()
+    if (!data.ok) { showErr(data.error || '请求失败'); return null }
+    return data.data
+  } catch(e) { showErr(e.message); return null }
+}
+
+// ── Toast ────────────────────────────────────────────────────────────────
+let toastT
+function showOk(m)  { flash(m, false) }
+function showErr(m) { flash(m, true) }
+function flash(m, err) {
+  const el = document.getElementById('toast')
+  el.textContent = m; el.style.color = err ? 'var(--red)' : 'var(--green)'
+  el.classList.add('show'); clearTimeout(toastT)
+  toastT = setTimeout(() => el.classList.remove('show'), 2500)
+}
+
+// ── SSE ──────────────────────────────────────────────────────────────────
+function connectSSE() {
+  if (es) { es.close(); es = null }
+  es = new EventSource('/events', { withCredentials: true })
+  es.onopen = () => setConn(true)
+  es.onerror = () => { setConn(false); setTimeout(connectSSE, 4000) }
+  es.onmessage = (e) => {
+    const ev = JSON.parse(e.data)
+    if (ev.type === 'connected') return
+    addLog(ev)
+  }
+}
+
+function setConn(ok) {
+  document.getElementById('dot').className = 'dot' + (ok ? ' ok' : '')
+  document.getElementById('stxt').textContent = ok ? '已连接' : '断线重连...'
+}
+
+function setDefaultWarn(isDefault) {
+  document.getElementById('appwarn').style.display = isDefault ? 'block' : 'none'
+}
+
+// ── Event log ─────────────────────────────────────────────────────────────
+function addLog(ev) {
+  const lb = document.getElementById('logbody')
+  const t = new Date().toTimeString().slice(0,8)
+  const el = document.createElement('div')
+  if (ev.type === 'recall') {
+    el.className = 'recall'
+    el.textContent = `[${t}] 撤回 群${ev.groupId} 用户${ev.userId} (第${ev.violations}次) — ${ev.content}`
+  } else if (ev.type === 'kick') {
+    el.className = 'kick'
+    el.textContent = `[${t}] 踢出 用户${ev.userId} 累计${ev.violations}次`
+  } else return
+  lb.appendChild(el); lb.scrollTop = lb.scrollHeight
+}
+
+// ── DOM helpers ───────────────────────────────────────────────────────────
+function h(tag, attr = {}, ...ch) {
+  const el = document.createElement(tag)
+  for (const [k, v] of Object.entries(attr)) {
+    if (k === 'cls') el.className = v
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v)
+    else el.setAttribute(k, v)
+  }
+  for (const c of ch) el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c)
+  return el
+}
+function dt(s) { return s ? s.slice(0,16).replace('T',' ') : '—' }
+
+function groupSel(cur, onChange) {
+  const s = h('select', { onchange: onChange })
+  if (me?.role === 'superadmin') {
+    const o = h('option', { value: '0' }, '全局 (group_id=0)')
+    if (cur === 0) o.selected = true
+    s.appendChild(o)
+  }
+  for (const g of groups) {
+    const o = h('option', { value: String(g.group_id) }, `群 ${g.group_id}`)
+    if (g.group_id === cur) o.selected = true
+    s.appendChild(o)
+  }
+  return s
+}
+
+// kwScope: { type:'global'|'group'|'category', id:number }
+// Returns a <select> for keyword scope selection
+function kwScopeSel(cur, onChange) {
+  const s = h('select', { onchange: (e) => onChange(JSON.parse(e.target.value)) })
+  if (me?.role === 'superadmin') {
+    const v = JSON.stringify({ type: 'global', id: 0 })
+    const o = h('option', { value: v }, '全局 (group_id=0)')
+    if (cur.type === 'global') o.selected = true
+    s.appendChild(o)
+  }
+  if (categories.length) {
+    const grp = document.createElement('optgroup'); grp.label = '── 组别 ──'
+    for (const c of categories) {
+      const v = JSON.stringify({ type: 'category', id: c.id })
+      const o = h('option', { value: v }, `组别: ${c.name}`)
+      if (cur.type === 'category' && cur.id === c.id) o.selected = true
+      grp.appendChild(o)
+    }
+    s.appendChild(grp)
+  }
+  if (groups.length) {
+    const grp = document.createElement('optgroup'); grp.label = '── 群组 ──'
+    for (const g of groups) {
+      const v = JSON.stringify({ type: 'group', id: g.group_id })
+      const o = h('option', { value: v }, `群 ${g.group_id}`)
+      if (cur.type === 'group' && cur.id === g.group_id) o.selected = true
+      grp.appendChild(o)
+    }
+    s.appendChild(grp)
+  }
+  return s
+}
+
+// ── Pages ─────────────────────────────────────────────────────────────────
+
+async function renderDashboard() {
+  const isSA = me?.role === 'superadmin'
+  const reqs = [api('/api/group/list'), api('/api/violation/list'), api('/api/category/list')]
+  if (isSA) reqs.push(api('/api/keyword/list', { groupId: 0 }))
+  const [gl, vl, cl, kl] = await Promise.all(reqs)
+  groups = (gl?.groups || [])
+  categories = (cl?.categories || [])
+  const M = document.getElementById('main'); M.innerHTML = ''
+
+  const stats = h('div', { cls: 'row' })
+  const statItems = [['监控群组', groups.length, '--blue'], ['组别', categories.length, '--green'], ['违规用户', (vl?.violations||[]).length, '--red']]
+  if (isSA) statItems.splice(2, 0, ['全局关键词', (kl?.keywords||[]).length, '--yellow'])
+  statItems.forEach(([label, n, c]) => {
+    const card = h('div', { cls: 'card', style: `flex:1;min-width:100px;text-align:center;border-top:2px solid var(${c})` })
+    card.innerHTML = `<div style="font-size:28px;font-weight:700;color:var(${c})">${n}</div><div style="color:var(--dim);font-size:12px;margin-top:2px">${label}</div>`
+    stats.appendChild(card)
+  })
+  M.appendChild(stats)
+
+  if (groups.length) {
+    const card = h('div', { cls: 'card' }); card.appendChild(h('h2',{},'监控群组'))
+    const t = h('table')
+    t.innerHTML = '<thead><tr><th>群号</th><th>状态</th><th>违规上限</th><th>关键词</th><th>违规人数</th></tr></thead>'
+    const tb = h('tbody')
+    groups.forEach(g => {
+      const tr = h('tr')
+      tr.innerHTML = `<td>${g.group_id}</td><td class="${g.enabled?'on':'off'}">${g.enabled?'启用':'停用'}</td><td>${g.max_violations}</td><td>${g.keyword_count}</td><td>${g.violation_count}</td>`
+      tb.appendChild(tr)
+    })
+    t.appendChild(tb); card.appendChild(t); M.appendChild(card)
+  }
+}
+
+async function renderGroups() {
+  const gl = await api('/api/group/list'); if (!gl) return
+  groups = gl.groups || []
+  const M = document.getElementById('main'); M.innerHTML = ''
+
+  // Add form (superadmin only)
+  if (me?.role === 'superadmin') {
+    const ac = h('div', { cls: 'card' }); ac.appendChild(h('h2',{},'添加群组'))
+    const gi = h('input',{type:'number',placeholder:'群号',style:'width:140px'})
+    const mi = h('input',{type:'number',placeholder:'违规上限',value:'3'})
+    const ab = h('button',{cls:'primary',onclick:async()=>{
+      if (!gi.value) return showErr('请输入群号')
+      const r = await api('/api/group/add',{groupId:+gi.value,maxViolations:+mi.value||3})
+      if(r!==null){showOk(`已添加群 ${gi.value}`);gi.value='';renderGroups()}
+    }},'添加')
+    ac.appendChild(h('div',{cls:'row'},gi,h('label',{style:'color:var(--dim);font-size:12px'},'违规上限'),mi,ab))
+    M.appendChild(ac)
+  }
+
+  const card = h('div',{cls:'card'}); card.appendChild(h('h2',{},`群组列表 (${groups.length})`))
+  if (!groups.length) { card.appendChild(h('div',{cls:'empty'},'暂无群组')); M.appendChild(card); return }
+
+  const t = h('table')
+  const isSA2 = me?.role === 'superadmin'
+  t.innerHTML=`<thead><tr><th>群号</th><th>状态</th><th>违规上限</th><th>所属组别</th><th>关键词</th><th>违规</th>${isSA2?'<th>操作</th>':''}</tr></thead>`
+  const tb = h('tbody')
+  groups.forEach(g => {
+    const tr = h('tr')
+    const es2 = h('select',{onchange:async(e)=>{await api('/api/group/settings',{groupId:g.group_id,enabled:+e.target.value})}})
+    es2.innerHTML='<option value="1">启用</option><option value="0">停用</option>'; es2.value=String(g.enabled)
+    const mi2 = h('input',{type:'number',value:String(g.max_violations),style:'width:60px'})
+    const sb  = h('button',{onclick:async()=>{await api('/api/group/settings',{groupId:g.group_id,maxViolations:+mi2.value});showOk('已保存')}},'保存')
+    const tdE=h('td');tdE.appendChild(es2)
+    const tdM=h('td');tdM.append(mi2,' ',sb)
+    const tdC=h('td',{style:'max-width:180px'})
+    ;(g.categories||[]).forEach(c=>tdC.appendChild(h('span',{cls:'badge global',style:'font-size:11px;margin:1px'},c.name)))
+    if(!(g.categories||[]).length) tdC.appendChild(h('span',{style:'color:var(--dim);font-size:11px'},'—'))
+    tr.appendChild(h('td',{},String(g.group_id))); tr.appendChild(tdE); tr.appendChild(tdM); tr.appendChild(tdC)
+    tr.appendChild(h('td',{},String(g.keyword_count)))
+    tr.appendChild(h('td',{},String(g.violation_count)))
+    if(isSA2){
+      const rb=h('button',{cls:'danger',onclick:async()=>{
+        if(!confirm(`确认移除群 ${g.group_id}？`))return
+        await api('/api/group/remove',{groupId:g.group_id}); showOk(`已移除群 ${g.group_id}`); renderGroups()
+      }},'移除')
+      const tdA=h('td');tdA.appendChild(rb); tr.appendChild(tdA)
+    }
+    tb.appendChild(tr)
+  })
+  t.appendChild(tb); card.appendChild(t); M.appendChild(card)
+}
+
+// kwScope: { type:'global'|'group'|'category', id:number }
+let kwScope = { type: 'global', id: 0 }
+
+async function renderKeywords() {
+  // Init default scope for non-superadmin
+  if (me?.role !== 'superadmin' && kwScope.type === 'global') {
+    if (categories.length) kwScope = { type: 'category', id: categories[0].id }
+    else if (groups.length) kwScope = { type: 'group', id: groups[0].group_id }
+    else kwScope = { type: 'none' }
+  }
+  if (kwScope.type === 'none') {
+    const M = document.getElementById('main'); M.innerHTML=''
+    M.appendChild(h('div',{cls:'card',innerHTML:'<div class="empty">暂无已授权群组或组别，请联系超级管理员分配权限</div>'}))
+    return
+  }
+
+  // Fetch keywords for current scope
+  let data
+  if (kwScope.type === 'category') {
+    data = await api('/api/category/keyword/list', { categoryId: kwScope.id })
+  } else {
+    data = await api('/api/keyword/list', { groupId: kwScope.type === 'global' ? 0 : kwScope.id })
+  }
+  if (!data) return
+
+  const M = document.getElementById('main'); M.innerHTML=''
+  const card = h('div',{cls:'card'}); card.appendChild(h('h2',{},'关键词管理'))
+
+  const sb = h('div',{cls:'sbar'}); sb.appendChild(h('label',{},'作用域：'))
+  sb.appendChild(kwScopeSel(kwScope, (scope) => { kwScope = scope; renderKeywords() }))
+  card.appendChild(sb)
+
+  const ki=h('input',{type:'text',placeholder:'关键词',style:'flex:1;min-width:160px'})
+  const scopeLabel = kwScope.type==='global'?' (全局)' : kwScope.type==='category'?` (组别)`:''
+  const kb=h('button',{cls:'primary',onclick:async()=>{
+    const kw=ki.value.trim(); if(!kw)return showErr('请输入关键词')
+    let r
+    if (kwScope.type === 'category') {
+      r = await api('/api/category/keyword/add', { categoryId: kwScope.id, keyword: kw })
+    } else {
+      r = await api('/api/keyword/add', { groupId: kwScope.type==='global'?0:kwScope.id, keyword: kw })
+    }
+    if(r!==null){showOk(`已添加: ${kw}`);ki.value='';renderKeywords()}
+  }},`添加${scopeLabel}`)
+  card.appendChild(h('div',{cls:'row',style:'margin-bottom:10px'},ki,kb))
+
+  const kws = data.keywords || []
+  if (!kws.length) { card.appendChild(h('div',{cls:'empty'},'暂无关键词')); M.appendChild(card); return }
+  const t=h('table'); t.innerHTML='<thead><tr><th>关键词</th><th>添加者</th><th>时间</th><th>操作</th></tr></thead>'
+  const tb=h('tbody')
+  kws.forEach(k=>{
+    const tr=h('tr')
+    const rb=h('button',{cls:'danger',onclick:async()=>{
+      if (kwScope.type === 'category') {
+        await api('/api/category/keyword/remove', { categoryId: kwScope.id, keyword: k.keyword })
+      } else {
+        await api('/api/keyword/remove', { groupId: k.group_id, keyword: k.keyword })
+      }
+      showOk(`已删除: ${k.keyword}`); renderKeywords()
+    }},'删除')
+    const td=h('td'); td.appendChild(rb)
+    tr.innerHTML=`<td>${k.keyword}</td><td>${k.created_by||'—'}</td><td>${dt(k.created_at)}</td>`
+    tr.appendChild(td); tb.appendChild(tr)
+  })
+  t.appendChild(tb); card.appendChild(t); M.appendChild(card)
+}
+
+
+// exScope: { type:'global'|'group'|'category', id:number }
+let exScope = { type: 'global', id: 0 }
+async function renderExempt() {
+  if (me?.role !== 'superadmin' && exScope.type === 'global') {
+    if (categories.length) exScope = { type: 'category', id: categories[0].id }
+    else if (groups.length) exScope = { type: 'group', id: groups[0].group_id }
+    else exScope = { type: 'none' }
+  }
+  if (exScope.type === 'none') {
+    const M=document.getElementById('main'); M.innerHTML=''
+    M.appendChild(h('div',{cls:'card',innerHTML:'<div class="empty">暂无已授权群组或组别，请联系超级管理员分配权限</div>'}))
+    return
+  }
+
+  let data
+  if (exScope.type === 'category') {
+    data = await api('/api/category/exempt/list', { categoryId: exScope.id })
+  } else {
+    data = await api('/api/exempt/list', { groupId: exScope.type === 'global' ? 0 : exScope.id })
+  }
+  if (!data) return
+
+  const M=document.getElementById('main'); M.innerHTML=''
+  const card=h('div',{cls:'card'}); card.appendChild(h('h2',{},'豁免用户'))
+  const sb=h('div',{cls:'sbar'}); sb.appendChild(h('label',{},'作用域：'))
+  sb.appendChild(kwScopeSel(exScope, (scope) => { exScope = scope; renderExempt() }))
+  card.appendChild(sb)
+
+  const ui3=h('input',{type:'number',placeholder:'QQ号',style:'width:140px'})
+  const scopeLabel = exScope.type==='global'?' (全局)' : exScope.type==='category'?` (组别)`:''
+  const ab=h('button',{cls:'primary',onclick:async()=>{
+    const uid=+ui3.value; if(!uid)return showErr('请输入QQ号')
+    if (exScope.type === 'category') {
+      await api('/api/category/exempt/add', { categoryId: exScope.id, userId: uid })
+    } else {
+      await api('/api/exempt/add', { groupId: exScope.type==='global'?0:exScope.id, userId: uid })
+    }
+    showOk(`已豁免: ${uid}`); ui3.value=''; renderExempt()
+  }},`添加豁免${scopeLabel}`)
+  card.appendChild(h('div',{cls:'row',style:'margin-bottom:10px'},ui3,ab))
+
+  const users=data.users||[]
+  if(!users.length){card.appendChild(h('div',{cls:'empty'},'暂无豁免用户'));M.appendChild(card);return}
+  const t=h('table'); t.innerHTML='<thead><tr><th>QQ号</th><th>时间</th><th>操作</th></tr></thead>'
+  const tb=h('tbody')
+  users.forEach(u=>{
+    const tr=h('tr')
+    const rb=h('button',{cls:'danger',onclick:async()=>{
+      if (exScope.type === 'category') {
+        await api('/api/category/exempt/remove', { categoryId: u.category_id, userId: u.user_id })
+      } else {
+        await api('/api/exempt/remove', { groupId: u.group_id, userId: u.user_id })
+      }
+      showOk(`已取消: ${u.user_id}`); renderExempt()
+    }},'取消')
+    const td=h('td');td.appendChild(rb)
+    tr.innerHTML=`<td>${u.user_id}</td><td>${dt(u.created_at)}</td>`; tr.appendChild(td); tb.appendChild(tr)
+  })
+  t.appendChild(tb); card.appendChild(t); M.appendChild(card)
+}
+
+let vioScope=null
+async function renderViolations() {
+  const data=await api('/api/violation/list',vioScope!==null?{groupId:vioScope}:{}); if(!data) return
+  const M=document.getElementById('main'); M.innerHTML=''
+  const card=h('div',{cls:'card'}); card.appendChild(h('h2',{},'违规记录'))
+  const sb=h('div',{cls:'sbar'}); sb.appendChild(h('label',{},'筛选群：'))
+  const fs=h('select',{onchange:(e)=>{vioScope=e.target.value===''?null:+e.target.value;renderViolations()}})
+  fs.innerHTML='<option value="">全部</option>'
+  groups.forEach(g=>{fs.innerHTML+=`<option value="${g.group_id}">群 ${g.group_id}</option>`})
+  if(vioScope!==null) fs.value=String(vioScope)
+  sb.appendChild(fs)
+  const viols=data.violations||[]
+  if(viols.length){
+    const ca=h('button',{cls:'danger',style:'margin-left:auto',onclick:async()=>{
+      if(!confirm('确认清空全部违规记录？'))return
+      await Promise.all(viols.map(v=>api('/api/violation/clear',{userId:v.user_id,groupId:v.group_id})))
+      showOk('已清空'); renderViolations()
+    }},'清空全部'); sb.appendChild(ca)
+  }
+  card.appendChild(sb)
+  if(!viols.length){card.appendChild(h('div',{cls:'empty'},'暂无违规记录'));M.appendChild(card);return}
+  const t=h('table'); t.innerHTML='<thead><tr><th>QQ号</th><th>群号</th><th>次数</th><th>最近</th><th>操作</th></tr></thead>'
+  const tb=h('tbody')
+  viols.forEach(v=>{
+    const tr=h('tr')
+    const bar=`<span style="display:inline-block;width:${Math.min(v.count*16,80)}px;height:5px;background:var(--red);border-radius:2px;vertical-align:middle;margin-left:6px"></span>`
+    const rb=h('button',{cls:'danger',onclick:async()=>{
+      await api('/api/violation/clear',{userId:v.user_id,groupId:v.group_id}); showOk(`已清除 ${v.user_id}`); renderViolations()
+    }},'清除')
+    const td=h('td');td.appendChild(rb)
+    tr.innerHTML=`<td>${v.user_id}</td><td>${v.group_id}</td><td>${v.count}${bar}</td><td>${dt(v.last_at)}</td>`
+    tr.appendChild(td); tb.appendChild(tr)
+  })
+  t.appendChild(tb); card.appendChild(t); M.appendChild(card)
+}
+
+function openUsernameModal(oldUsername, isOwn) {
+  const bg = h('div', { cls: 'modal-bg' })
+  const modal = h('div', { cls: 'modal' })
+  modal.appendChild(h('h3', {}, `修改用户名 — ${oldUsername}`))
+  const nu = h('input', { type: 'text', placeholder: '新用户名（至少2位）', style: 'width:100%', value: oldUsername })
+  modal.appendChild(nu)
+  let pwInput = null
+  if (isOwn) {
+    pwInput = h('input', { type: 'password', placeholder: '当前密码确认', style: 'width:100%;margin-top:8px' })
+    modal.appendChild(pwInput)
+  }
+  const errEl = h('div', { style: 'color:var(--red);font-size:12px;min-height:16px' })
+  const row2 = h('div', { cls: 'row' })
+  row2.append(
+    h('button', { cls: 'primary', onclick: async () => {
+      const newUsername = nu.value.trim()
+      if (!newUsername || newUsername.length < 2) { errEl.textContent = '用户名至少 2 位'; return }
+      const body = { username: oldUsername, newUsername }
+      if (isOwn && pwInput) body.password = pwInput.value
+      const r = await api('/api/user/username', body)
+      if (r !== null) {
+        showOk('用户名已修改'); document.body.removeChild(bg)
+        if (isOwn) { me.username = newUsername; document.getElementById('uname').textContent = newUsername }
+        renderUsers()
+      } else errEl.textContent = '修改失败'
+    }}, '确认修改'),
+    h('button', { onclick: () => document.body.removeChild(bg) }, '取消')
+  )
+  modal.append(errEl, row2)
+  bg.appendChild(modal); document.body.appendChild(bg)
+  nu.focus(); nu.select()
+}
+
+function openGroupsModal(username, currentGroups) {
+  const bg = h('div', { cls: 'modal-bg' })
+  const modal = h('div', { cls: 'modal', style: 'width:400px;max-height:80vh;overflow-y:auto' })
+  modal.appendChild(h('h3', {}, `群访问权限 — ${username}`))
+
+  const checkboxes = []
+  const grpList = h('div', { style: 'display:flex;flex-direction:column;gap:8px;margin:12px 0' })
+  if (groups.length) {
+    for (const g of groups) {
+      const cb = h('input', { type: 'checkbox', value: String(g.group_id), style: 'width:auto' })
+      cb.checked = currentGroups.includes(g.group_id)
+      const lbl = h('label', { style: 'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px' })
+      lbl.append(cb, `群 ${g.group_id}`)
+      checkboxes.push({ groupId: g.group_id, cb })
+      grpList.appendChild(lbl)
+    }
+  } else {
+    grpList.appendChild(h('div', { style: 'color:var(--dim);font-size:12px' }, '暂无群组，请先在"群组"页面添加'))
+  }
+  modal.appendChild(grpList)
+
+  const row2 = h('div', { cls: 'row' })
+  const saveBtn = h('button', { cls: 'primary', onclick: async () => {
+    const ops = []
+    for (const { groupId, cb } of checkboxes) {
+      const was = currentGroups.includes(groupId)
+      if (cb.checked && !was) ops.push(api('/api/user/groups/add', { username, groupId }))
+      else if (!cb.checked && was) ops.push(api('/api/user/groups/remove', { username, groupId }))
+    }
+    await Promise.all(ops)
+    showOk('群权限已更新'); document.body.removeChild(bg); renderUsers()
+  }}, '保存')
+  row2.append(saveBtn, h('button', { onclick: () => document.body.removeChild(bg) }, '取消'))
+  modal.appendChild(row2)
+  bg.appendChild(modal); document.body.appendChild(bg)
+}
+
+function openCategoriesModal(username, currentCats) {
+  const currentIds = currentCats.map(c => c.id)
+  const bg = h('div', { cls: 'modal-bg' })
+  const modal = h('div', { cls: 'modal', style: 'width:400px;max-height:80vh;overflow-y:auto' })
+  modal.appendChild(h('h3', {}, `组别权限 — ${username}`))
+  const checkboxes = []
+  const catList = h('div', { style: 'display:flex;flex-direction:column;gap:8px;margin:12px 0' })
+  if (categories.length) {
+    for (const c of categories) {
+      const cb = h('input', { type: 'checkbox', value: String(c.id), style: 'width:auto' })
+      cb.checked = currentIds.includes(c.id)
+      const lbl = h('label', { style: 'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px' })
+      lbl.append(cb, `${c.name}`)
+      checkboxes.push({ categoryId: c.id, cb })
+      catList.appendChild(lbl)
+    }
+  } else {
+    catList.appendChild(h('div', { style: 'color:var(--dim);font-size:12px' }, '暂无组别，请先在「组别」页面创建'))
+  }
+  modal.appendChild(catList)
+  const row2 = h('div', { cls: 'row' })
+  const saveBtn = h('button', { cls: 'primary', onclick: async () => {
+    const ops = []
+    for (const { categoryId, cb } of checkboxes) {
+      const was = currentIds.includes(categoryId)
+      if (cb.checked && !was) ops.push(api('/api/user/categories/add', { username, categoryId }))
+      else if (!cb.checked && was) ops.push(api('/api/user/categories/remove', { username, categoryId }))
+    }
+    await Promise.all(ops)
+    showOk('组别权限已更新'); document.body.removeChild(bg); renderUsers()
+  }}, '保存')
+  row2.append(saveBtn, h('button', { onclick: () => document.body.removeChild(bg) }, '取消'))
+  modal.appendChild(row2)
+  bg.appendChild(modal); document.body.appendChild(bg)
+}
+
+// ── Categories page ───────────────────────────────────────────────────────
+
+function openCategoryGroupsModal(cat) {
+  const bg = h('div', { cls: 'modal-bg' })
+  const modal = h('div', { cls: 'modal', style: 'width:420px;max-height:80vh;overflow-y:auto' })
+  modal.appendChild(h('h3', {}, `成员群组 — ${cat.name}`))
+  const checkboxes = []
+  const grpList = h('div', { style: 'display:flex;flex-direction:column;gap:8px;margin:12px 0' })
+  if (groups.length) {
+    const currentGroupIds = (cat.currentGroups || []).map(g => g.group_id)
+    for (const g of groups) {
+      const cb = h('input', { type: 'checkbox', value: String(g.group_id), style: 'width:auto' })
+      cb.checked = currentGroupIds.includes(g.group_id)
+      const lbl = h('label', { style: 'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px' })
+      const cats = (g.categories||[]).filter(c=>c.id!==cat.id).map(c=>c.name).join(', ')
+      lbl.append(cb, `群 ${g.group_id}`, cats ? h('span',{style:'color:var(--dim);font-size:11px'},` (已在: ${cats})`) : '')
+      checkboxes.push({ groupId: g.group_id, cb, was: currentGroupIds.includes(g.group_id) })
+      grpList.appendChild(lbl)
+    }
+  } else {
+    grpList.appendChild(h('div', { style: 'color:var(--dim);font-size:12px' }, '暂无群组，请先在「群组」页面添加'))
+  }
+  modal.appendChild(grpList)
+  const row2 = h('div', { cls: 'row' })
+  const saveBtn = h('button', { cls: 'primary', onclick: async () => {
+    const ops = []
+    for (const { groupId, cb, was } of checkboxes) {
+      if (cb.checked && !was) ops.push(api('/api/category/groups/add', { categoryId: cat.id, groupId }))
+      else if (!cb.checked && was) ops.push(api('/api/category/groups/remove', { categoryId: cat.id, groupId }))
+    }
+    await Promise.all(ops)
+    showOk('成员群组已更新'); document.body.removeChild(bg); renderCategories()
+  }}, '保存')
+  row2.append(saveBtn, h('button', { onclick: () => document.body.removeChild(bg) }, '取消'))
+  modal.appendChild(row2)
+  bg.appendChild(modal); document.body.appendChild(bg)
+}
+
+async function renderCategories() {
+  await refreshMeta()
+  const isSA = me?.role === 'superadmin'
+  const M = document.getElementById('main'); M.innerHTML = ''
+
+  if (isSA) {
+    const ac = h('div', { cls: 'card' }); ac.appendChild(h('h2', {}, '添加组别'))
+    const ni = h('input', { type: 'text', placeholder: '组别名称', style: 'width:200px' })
+    const ab = h('button', { cls: 'primary', onclick: async () => {
+      const name = ni.value.trim(); if (!name) return showErr('请输入组别名称')
+      const r = await api('/api/category/add', { name })
+      if (r !== null) { showOk(`已创建: ${name}`); ni.value = ''; renderCategories() }
+    }}, '创建')
+    ac.appendChild(h('div', { cls: 'row' }, ni, ab)); M.appendChild(ac)
+  }
+
+  const card = h('div', { cls: 'card' }); card.appendChild(h('h2', {}, `组别列表 (${categories.length})`))
+  if (!categories.length) { card.appendChild(h('div', { cls: 'empty' }, '暂无组别')); M.appendChild(card); return }
+
+  const t = h('table')
+  t.innerHTML = `<thead><tr><th>组别名</th><th>成员群</th><th>关键词</th><th>操作</th></tr></thead>`
+  const tb = h('tbody')
+  for (const c of categories) {
+    const tr = h('tr')
+    const tdA = h('td')
+    if (isSA) {
+      const manBtn = h('button', { style: 'font-size:11px;margin-right:4px', onclick: async () => {
+        const r = await api('/api/category/groups', { categoryId: c.id })
+        c.currentGroups = r?.groups || []
+        openCategoryGroupsModal(c)
+      }}, '管理成员群')
+      const delBtn = h('button', { cls: 'danger', onclick: async () => {
+        if (!confirm(`确认删除组别「${c.name}」？`)) return
+        await api('/api/category/remove', { categoryId: c.id }); showOk(`已删除: ${c.name}`); renderCategories()
+      }}, '删除')
+      tdA.append(manBtn, delBtn)
+    }
+    tr.appendChild(h('td', {}, c.name))
+    tr.appendChild(h('td', {}, String(c.group_count)))
+    tr.appendChild(h('td', {}, String(c.keyword_count)))
+    tr.appendChild(tdA); tb.appendChild(tr)
+  }
+  t.appendChild(tb); card.appendChild(t); M.appendChild(card)
+}
+
+async function renderUsers() {
+  const data=await api('/api/user/list'); if(!data) return
+  const M=document.getElementById('main'); M.innerHTML=''
+  const isSA = me?.role==='superadmin'
+  const users = data.users || []
+
+  if (isSA) {
+    const ac=h('div',{cls:'card'}); ac.appendChild(h('h2',{},'添加系统用户'))
+    const ui4=h('input',{type:'text',placeholder:'用户名',style:'width:120px'})
+    const pi=h('input',{type:'password',placeholder:'密码',style:'width:120px'})
+    const rs=h('select'); rs.innerHTML='<option value="admin">admin</option><option value="superadmin">superadmin</option>'
+    const ab=h('button',{cls:'primary',onclick:async()=>{
+      if(!ui4.value||!pi.value)return showErr('请填写用户名和密码')
+      if(pi.value.length<6)return showErr('密码至少6位')
+      const r=await api('/api/user/add',{username:ui4.value,password:pi.value,role:rs.value})
+      if(r!==null){showOk(`已添加: ${ui4.value}`);ui4.value='';pi.value='';renderUsers()}
+    }},'添加')
+    ac.appendChild(h('div',{cls:'row'},ui4,pi,rs,ab)); M.appendChild(ac)
+
+    const card=h('div',{cls:'card'}); card.appendChild(h('h2',{},`系统用户 (${users.length})`))
+    if(!users.length){card.appendChild(h('div',{cls:'empty'},'暂无用户'));M.appendChild(card);return}
+    const t=h('table'); t.innerHTML='<thead><tr><th>用户名</th><th>角色</th><th>已授权组别</th><th>已授权群(直接)</th><th>创建时间</th><th>操作</th></tr></thead>'
+    const tb=h('tbody')
+    users.forEach(u=>{
+      const tr=h('tr')
+      const badge=h('span',{cls:`badge ${u.role}`},u.role); const tdR=h('td');tdR.appendChild(badge)
+
+      // 组别列
+      const tdC=h('td',{style:'max-width:200px'})
+      if(u.role!=='superadmin'){
+        const catChips=h('div',{cls:'row',style:'flex-wrap:wrap;gap:3px;margin-bottom:4px'})
+        if(u.categories?.length) u.categories.forEach(c=>catChips.appendChild(h('span',{cls:'badge global',style:'font-size:11px'},c.name)))
+        else catChips.appendChild(h('span',{style:'color:var(--dim);font-size:11px'},'无'))
+        tdC.appendChild(catChips)
+        tdC.appendChild(h('button',{style:'font-size:11px',onclick:()=>openCategoriesModal(u.username,u.categories||[])},'管理组别'))
+      } else { tdC.appendChild(h('span',{style:'color:var(--dim);font-size:11px'},'全部')) }
+
+      // 直接群列
+      const tdG=h('td',{style:'max-width:180px'})
+      if(u.role!=='superadmin'){
+        const chips=h('div',{cls:'row',style:'flex-wrap:wrap;gap:3px;margin-bottom:4px'})
+        if(u.groups?.length) u.groups.forEach(gid=>chips.appendChild(h('span',{cls:'badge',style:'font-size:11px'},String(gid))))
+        else chips.appendChild(h('span',{style:'color:var(--dim);font-size:11px'},'无'))
+        tdG.appendChild(chips)
+        tdG.appendChild(h('button',{style:'font-size:11px',onclick:()=>openGroupsModal(u.username,u.groups||[])},'管理群'))
+      } else { tdG.appendChild(h('span',{style:'color:var(--dim);font-size:11px'},'全部')) }
+
+      const tdA=h('td',{style:'white-space:nowrap'})
+      tdA.appendChild(h('button',{style:'font-size:11px;margin-right:4px',onclick:()=>openUsernameModal(u.username,u.username===me?.username)},'改用户名'))
+      if(u.username!==me?.username){
+        tdA.appendChild(h('button',{cls:'danger',onclick:async()=>{
+          if(!confirm(`确认删除用户 ${u.username}？`))return
+          await api('/api/user/remove',{username:u.username}); showOk(`已删除: ${u.username}`); renderUsers()
+        }},'删除'))
+      }
+      tr.appendChild(h('td',{},u.username)); tr.appendChild(tdR); tr.appendChild(tdC); tr.appendChild(tdG)
+      tr.appendChild(h('td',{},dt(u.created_at))); tr.appendChild(tdA); tb.appendChild(tr)
+    })
+    t.appendChild(tb); card.appendChild(t); M.appendChild(card)
+  } else {
+    // 非 superadmin：只展示自己的信息和已授权群/组别
+    const user = users[0]
+    if (!user) return
+    const card=h('div',{cls:'card'})
+    card.appendChild(h('h2',{},'我的账户'))
+    const info=h('div',{cls:'row',style:'margin-top:8px'})
+    info.append(h('span',{style:'color:var(--dim);font-size:12px'},'用户名：'),
+                h('span',{},user.username),
+                h('span',{cls:`badge ${user.role}`,style:'margin-left:auto'},user.role))
+    card.appendChild(info)
+    // 已授权组别
+    const catDiv=h('div',{style:'margin-top:14px'})
+    catDiv.appendChild(h('div',{style:'color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px'},'已授权组别'))
+    const catChips=h('div',{cls:'row',style:'flex-wrap:wrap;gap:4px'})
+    if(user.categories?.length) user.categories.forEach(c=>catChips.appendChild(h('span',{cls:'badge global'},c.name)))
+    else catChips.appendChild(h('span',{style:'color:var(--dim);font-size:12px'},'暂无'))
+    catDiv.appendChild(catChips); card.appendChild(catDiv)
+    // 已授权群组（直接）
+    const grpDiv=h('div',{style:'margin-top:14px'})
+    grpDiv.appendChild(h('div',{style:'color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px'},'已授权群组（直接）'))
+    const chips=h('div',{cls:'row',style:'flex-wrap:wrap;gap:4px'})
+    if(user.groups?.length) user.groups.forEach(gid=>chips.appendChild(h('span',{cls:'badge'},String(gid))))
+    else chips.appendChild(h('span',{style:'color:var(--dim);font-size:12px'},'暂无'))
+    grpDiv.appendChild(chips); card.appendChild(grpDiv)
+    card.appendChild(h('button',{style:'margin-top:14px',onclick:()=>openUsernameModal(user.username,true)},'修改用户名'))
+    M.appendChild(card)
+  }
+}
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+const pageMap = { dashboard:renderDashboard, groups:renderGroups, keywords:renderKeywords, exempt:renderExempt, violations:renderViolations, users:renderUsers, categories:renderCategories }
+let curPage = 'dashboard'
+
+async function goTo(p) {
+  curPage = p
+  document.querySelectorAll('nav button[data-p]').forEach(b=>b.classList.toggle('active',b.dataset.p===p))
+  document.getElementById('main').innerHTML='<div class="empty">加载中...</div>'
+  try { await pageMap[p]() } catch(e) { showErr(e.message) }
+}
+
+document.getElementById('main').addEventListener('click',()=>{})
+document.querySelector('nav').addEventListener('click',(e)=>{
+  const b=e.target.closest('button[data-p]'); if(b) goTo(b.dataset.p)
+})
+
+// ── Password change modal ──────────────────────────────────────────────────
+document.getElementById('pwbtn').onclick = () => {
+  const bg = h('div', { cls: 'modal-bg' })
+  const modal = h('div', { cls: 'modal' })
+  modal.appendChild(h('h3', {}, '修改密码'))
+  const op = h('input', { type: 'password', placeholder: '当前密码', style: 'width:100%' })
+  const np = h('input', { type: 'password', placeholder: '新密码（至少6位）', style: 'width:100%' })
+  const cp = h('input', { type: 'password', placeholder: '确认新密码', style: 'width:100%' })
+  const err2 = h('div', { style: 'color:var(--red);font-size:12px;min-height:16px' })
+  const row2 = h('div', { cls: 'row' })
+  const ok2 = h('button', { cls: 'primary', onclick: async () => {
+    if (np.value !== cp.value) { err2.textContent = '两次密码不一致'; return }
+    const r = await api('/api/user/password', { oldPassword: op.value, newPassword: np.value })
+    if (r !== null) { showOk('密码已修改'); document.body.removeChild(bg); setDefaultWarn(false) }
+    else err2.textContent = '修改失败，请检查当前密码'
+  }}, '确认修改')
+  const cancel = h('button', { onclick: () => document.body.removeChild(bg) }, '取消')
+  row2.append(ok2, cancel)
+  modal.append(op, np, cp, err2, row2)
+  bg.appendChild(modal); document.body.appendChild(bg)
+  op.focus()
+}
+
+// ── Login flow ─────────────────────────────────────────────────────────────
+document.getElementById('lbtn').onclick = async () => {
+  const u = document.getElementById('lu').value.trim()
+  const p = document.getElementById('lp').value
+  const el = document.getElementById('lerr')
+  el.textContent = '登录中...'
+  try {
+    const r = await fetch('/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin', body: JSON.stringify({ username: u, password: p })
+    })
+    const data = await r.json()
+    if (!data.ok) { el.textContent = data.error || '登录失败'; return }
+    me = data.data
+    if (document.getElementById('remem').checked) localStorage.setItem('gm_user', u)
+    el.textContent = ''
+    document.getElementById('login').style.display = 'none'
+    document.getElementById('app').style.display   = 'flex'
+    document.getElementById('uname').textContent   = me.username
+    setDefaultWarn(!!me.isDefaultPassword)
+    connectSSE()
+    await refreshMeta()
+    await goTo('dashboard')
+  } catch(e) { el.textContent = e.message }
+}
+
+document.getElementById('lu').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('lp').focus() }
+document.getElementById('lp').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('lbtn').click() }
+
+document.getElementById('lout').onclick = async () => {
+  await fetch('/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: '{}' })
+  if (es) { es.close(); es = null }
+  me = null
+  document.getElementById('app').style.display   = 'none'
+  document.getElementById('login').style.display = 'flex'
+  setConn(false)
+}
+
+document.getElementById('clrlog').onclick = () => { document.getElementById('logbody').innerHTML='' }
+
+// ── Check existing session ─────────────────────────────────────────────────
+;(async () => {
+  const u = localStorage.getItem('gm_user'); if (u) document.getElementById('lu').value = u
+  try {
+    const r = await fetch('/me', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: '{}' })
+    const data = await r.json()
+    if (data.ok) {
+      me = data.data
+      document.getElementById('login').style.display = 'none'
+      document.getElementById('app').style.display   = 'flex'
+      document.getElementById('uname').textContent   = me.username
+      setDefaultWarn(!!me.isDefaultPassword)
+      connectSSE()
+      await refreshMeta()
+      await goTo('dashboard')
+    }
+  } catch {}
+})()
+</script>
+</body>
+</html>

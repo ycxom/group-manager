@@ -1,0 +1,23 @@
+{
+  "debug": false,
+  "maxViolations": 3,
+  "whitelistGroups": [],
+  "exemptUsers": [],
+  "rootUsers": [],
+  "recallKeywords": [
+    "com.tencent.tuwen.lua",
+    "[QQ收藏]",
+    "一个人偷偷看",
+    "60.221.240.12"
+  ],
+  "bot": {
+    "url": "",
+    "token": "",
+    "mode": "forward",
+    "reversePort": 8080
+  },
+  "management": {
+    "port": 8765,
+    "token": "change-this-token"
+  }
+}

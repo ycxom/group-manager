@@ -1,0 +1,180 @@
+/**
+ * 核心群管逻辑，与协议无关。
+ * 消息段格式（统一）：
+ *   { type:'text',    text:'...' }
+ *   { type:'json',    data:'{"app":"..."}' }
+ *   { type:'forward', id:'...', nodes?:[...] }  nodes 已预取时直接用
+ */
+export class RecallManager {
+  constructor(config, db) {
+    this.config = config
+    this.db = db
+    this._listeners = []
+  }
+
+  on(fn) {
+    this._listeners.push(fn)
+    return () => { this._listeners = this._listeners.filter(f => f !== fn) }
+  }
+
+  _emit(ev) { for (const fn of this._listeners) fn(ev) }
+
+  // ──────── 关键词检测 ────────
+
+  _match(str, keywords) {
+    for (const kw of keywords) {
+      if (str.includes(kw)) return kw
+    }
+    return null
+  }
+
+  checkSegment(seg, keywords) {
+    if (seg.type === 'json') {
+      try {
+        const obj = JSON.parse(seg.data)
+        if (obj.app === 'com.tencent.tuwen.lua') {
+          return { hit: true, content: obj.prompt || 'QQ收藏分享' }
+        }
+        const kw = this._match(JSON.stringify(obj), keywords)
+        if (kw) return { hit: true, content: obj.prompt || kw }
+      } catch {}
+    }
+
+    if (seg.type === 'text') {
+      const text = seg.text || ''
+      const kw = this._match(text, keywords)
+      if (kw) return { hit: true, content: text.slice(0, 80) }
+    }
+
+    return { hit: false }
+  }
+
+  async _scanNodes(nodes, keywords) {
+    for (const node of nodes) {
+      for (const seg of (node.message || [])) {
+        const r = this.checkSegment(seg, keywords)
+        if (r.hit) return { hit: true, content: `[转发] ${r.content}` }
+      }
+    }
+    return { hit: false }
+  }
+
+  // ──────── 主流程 ────────
+
+  /**
+   * @param {{ groupId, userId, senderRole, messageId, messages }} event
+   * @param {(id:string)=>Promise} fetchForward
+   * @returns {{ action:'recall'|'recall+kick', messageId, groupId, userId }|null}
+   */
+  async processMessage(event, fetchForward) {
+    const { groupId, userId, senderRole, messages, messageId } = event
+
+    if (!this.db.isGroupEnabled(groupId)) return null
+    if (this.db.isExempt(groupId, userId)) return null
+    if (senderRole === 'admin' || senderRole === 'owner') return null
+
+    const keywords = this.db.getEffectiveKeywords(groupId)
+    if (keywords.length === 0) return null
+
+    let result = { hit: false }
+
+    for (const seg of messages) {
+      if (!result.hit && (seg.type === 'forward' || seg.type === 'multimsg' || seg.type === 'long_msg')) {
+        const nodes = seg.nodes?.length ? seg.nodes : (fetchForward ? await fetchForward(seg.id || seg.resid).catch(() => null) : null)
+        if (nodes) result = await this._scanNodes(nodes, keywords)
+      }
+      if (!result.hit) result = this.checkSegment(seg, keywords)
+      if (result.hit) break
+    }
+
+    if (!result.hit) return null
+
+    if (this.config.get('debug', false)) {
+      console.log(`[RecallMgr] DEBUG 群${groupId} 用户${userId}: ${result.content}`)
+      return null
+    }
+
+    const count = this.db.incrementViolation(userId, groupId)
+    this._emit({ type: 'recall', groupId, userId, content: result.content, violations: count })
+
+    const group = this.db.getGroup(groupId)
+    const max = group?.max_violations ?? this.config.get('maxViolations', 3)
+
+    if (count >= max) {
+      this.db.clearViolation(userId, groupId)
+      this._emit({ type: 'kick', groupId, userId, violations: count })
+      return { action: 'recall+kick', messageId, groupId, userId }
+    }
+
+    return { action: 'recall', messageId, groupId, userId }
+  }
+
+  // ──────── 群内管理命令 ────────
+
+  /**
+   * @param {string} text
+   * @param {number} groupId
+   * @param {number} userId
+   * @param {string} senderRole  'owner'|'admin'|'member'
+   * @returns {{ reply:string }|null}
+   */
+  processCommand(text, groupId, userId, senderRole) {
+    if (!text.startsWith('#gm ')) return null
+
+    const isOwner = senderRole === 'owner'
+    const isAdmin = senderRole === 'admin' || isOwner
+
+    if (!isAdmin) return { reply: '无权限执行群管命令（需要群管理员或群主）' }
+
+    const args = text.slice(4).trim().split(/\s+/)
+    const sub  = args[0]
+
+    // #gm keyword list|add <kw>|remove <kw>
+    if (sub === 'keyword') {
+      const op = args[1]
+      const kw = args.slice(2).join(' ')
+
+      if (op === 'list') {
+        const list = this.db.getEffectiveKeywords(groupId)
+        return { reply: `本群有效关键词 (${list.length}):\n${list.map((k, i) => `${i + 1}. ${k}`).join('\n') || '(无)'}` }
+      }
+
+      if (!kw) return { reply: `用法: #gm keyword ${op} <关键词>` }
+
+      if (op === 'add')    return { reply: this.db.addKeyword(groupId, kw, userId) ? `已添加: ${kw}` : `已存在: ${kw}` }
+      if (op === 'remove') return { reply: this.db.removeKeyword(groupId, kw)       ? `已删除: ${kw}` : `不存在: ${kw}` }
+      return { reply: '用法: #gm keyword add|remove|list [关键词]' }
+    }
+
+    // #gm violations
+    if (sub === 'violations') {
+      const list = this.db.listViolations(groupId)
+      return {
+        reply: list.length
+          ? `本群违规 (${list.length} 人):\n${list.map(r => `${r.user_id}: ${r.count} 次`).join('\n')}`
+          : '本群暂无违规记录'
+      }
+    }
+
+    // #gm clear <userId>  (仅群主)
+    if (sub === 'clear') {
+      if (!isOwner) return { reply: '仅群主可清除违规记录' }
+      const uid = Number(args[1])
+      if (!uid) return { reply: '用法: #gm clear <QQ号>' }
+      this.db.clearViolation(uid, groupId)
+      return { reply: `已清除 ${uid} 在本群的违规记录` }
+    }
+
+    // #gm exempt add|remove <userId>  (仅群主)
+    if (sub === 'exempt') {
+      if (!isOwner) return { reply: '仅群主可管理豁免用户' }
+      const op  = args[1]
+      const uid = Number(args[2])
+      if (!uid) return { reply: '用法: #gm exempt add|remove <QQ号>' }
+      if (op === 'add')    return { reply: this.db.addExempt(groupId, uid)    ? `已豁免: ${uid}` : `已存在: ${uid}` }
+      if (op === 'remove') return { reply: this.db.removeExempt(groupId, uid) ? `已取消豁免: ${uid}` : `不存在: ${uid}` }
+    }
+
+    return { reply: `未知子命令: ${sub}。可用: keyword / violations / clear / exempt` }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "group-manager",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "独立群管程序，通过 WebSocket 与 OneBot 协议 Bot 通讯",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "test": "node test-client.js"
+  },
+  "dependencies": {
+    "sql.js": "^1.14.1",
+    "ws": "^8.16.0"
+  }
+}
