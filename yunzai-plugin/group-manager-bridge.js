@@ -78,22 +78,30 @@ export class GroupManagerBridge extends plugin {
     })
   }
 
+  _safeSeg(seg) {
+    const type = String(seg?.type || 'unknown')
+    if (type === 'text')  return { type, text: String(seg.text || '') }
+    if (type === 'json')  return { type, data: String(seg.data || '') }
+    if (type === 'image') return { type, url: String(seg.url || seg.file || '') }
+    return { type }
+  }
+
   async _normalizeSegments(message) {
     const result = []
     for (const seg of (message || [])) {
-      if (seg.type === 'text') {
-        result.push({ type: 'text', text: seg.text || '' })
-      } else if (seg.type === 'json') {
-        result.push({ type: 'json', data: seg.data || '' })
-      } else if (seg.type === 'forward' || seg.type === 'multimsg' || seg.type === 'long_msg') {
-        const id = (seg.data?.id) || seg.resid || ''
+      const type = seg.type
+      if (type === 'forward' || type === 'multimsg' || type === 'long_msg') {
+        const id = String(seg.data?.id || seg.resid || '')
         let nodes = []
         if (id) {
-          try { nodes = await Bot.getForwardMsg(id) || [] } catch {}
+          try {
+            const raw = await Bot.getForwardMsg(id) || []
+            nodes = raw.map(n => ({ message: (n.message || []).map(s => this._safeSeg(s)) }))
+          } catch {}
         }
         result.push({ type: 'forward', id, nodes })
       } else {
-        result.push(seg)
+        result.push(this._safeSeg(seg))
       }
     }
     return result

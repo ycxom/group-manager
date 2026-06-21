@@ -1,9 +1,12 @@
+import { analyzeImage } from './image-processor.js'
+
 /**
  * 核心群管逻辑，与协议无关。
  * 消息段格式（统一）：
  *   { type:'text',    text:'...' }
  *   { type:'json',    data:'{"app":"..."}' }
  *   { type:'forward', id:'...', nodes?:[...] }  nodes 已预取时直接用
+ *   { type:'image',   url:'...' }
  */
 export class RecallManager {
   constructor(config, db) {
@@ -59,6 +62,29 @@ export class RecallManager {
     return { hit: false }
   }
 
+  async _checkImage(url, rules, keywords) {
+    try {
+      const r = await analyzeImage(url, rules)
+
+      if ((rules.qr_enabled || rules.qr_block_all) && r.qr !== null) {
+        if (rules.qr_block_all) return { hit: true, content: `[QR] ${r.qr.slice(0, 80) || '二维码'}` }
+        if (keywords.length && this._match(r.qr, keywords)) return { hit: true, content: `[QR] ${r.qr.slice(0, 80)}` }
+      }
+      if (rules.ocr_enabled && r.ocr) {
+        if (keywords.length && this._match(r.ocr, keywords)) return { hit: true, content: `[OCR] ${r.ocr.slice(0, 80)}` }
+      }
+      if (rules.nsfw_enabled && r.nsfw) {
+        return { hit: true, content: '[涩图] 检测到不当内容' }
+      }
+      if (rules.llm_enabled && r.llm?.startsWith('VIOLATION')) {
+        return { hit: true, content: `[LLM] ${r.llm.replace('VIOLATION:', '').trim().slice(0, 80)}` }
+      }
+    } catch (e) {
+      console.error('[RecallMgr] 图片分析异常:', e.message)
+    }
+    return { hit: false }
+  }
+
   // ──────── 主流程 ────────
 
   /**
@@ -73,18 +99,25 @@ export class RecallManager {
     if (this.db.isExempt(groupId, userId)) return null
     if (senderRole === 'admin' || senderRole === 'owner') return null
 
-    const keywords = this.db.getEffectiveKeywords(groupId)
-    if (keywords.length === 0) return null
+    const keywords    = this.db.getEffectiveKeywords(groupId)
+    const imageRules  = this.db.getImageRules(groupId)
+    const hasImgFeat  = imageRules && (imageRules.qr_enabled || imageRules.qr_block_all ||
+                        imageRules.ocr_enabled || imageRules.nsfw_enabled || imageRules.llm_enabled)
+
+    if (keywords.length === 0 && !hasImgFeat) return null
 
     let result = { hit: false }
 
     for (const seg of messages) {
-      if (!result.hit && (seg.type === 'forward' || seg.type === 'multimsg' || seg.type === 'long_msg')) {
-        const nodes = seg.nodes?.length ? seg.nodes : (fetchForward ? await fetchForward(seg.id || seg.resid).catch(() => null) : null)
-        if (nodes) result = await this._scanNodes(nodes, keywords)
-      }
-      if (!result.hit) result = this.checkSegment(seg, keywords)
       if (result.hit) break
+      if (seg.type === 'forward' || seg.type === 'multimsg' || seg.type === 'long_msg') {
+        const nodes = seg.nodes?.length ? seg.nodes : (fetchForward ? await fetchForward(seg.id || seg.resid).catch(() => null) : null)
+        if (nodes && keywords.length) result = await this._scanNodes(nodes, keywords)
+      } else if (seg.type === 'image' && seg.url && hasImgFeat) {
+        result = await this._checkImage(seg.url, imageRules, keywords)
+      } else {
+        if (keywords.length) result = this.checkSegment(seg, keywords)
+      }
     }
 
     if (!result.hit) return null

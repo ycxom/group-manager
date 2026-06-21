@@ -10,6 +10,8 @@
     "test": "node test-client.js"
   },
   "dependencies": {
+    "jimp": "^0.22.12",
+    "jsqr": "^1.4.0",
     "sql.js": "^1.14.1",
     "ws": "^8.16.0"
   }

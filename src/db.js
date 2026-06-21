@@ -86,6 +86,24 @@ CREATE TABLE IF NOT EXISTS category_exempt_users (
   created_at  TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(category_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS image_rules (
+  group_id       INTEGER PRIMARY KEY,
+  qr_enabled     INTEGER DEFAULT 0,
+  qr_block_all   INTEGER DEFAULT 0,
+  ocr_enabled    INTEGER DEFAULT 0,
+  ocr_url        TEXT    DEFAULT '',
+  ocr_key        TEXT    DEFAULT '',
+  nsfw_enabled   INTEGER DEFAULT 0,
+  nsfw_url       TEXT    DEFAULT '',
+  nsfw_key       TEXT    DEFAULT '',
+  nsfw_threshold REAL    DEFAULT 0.7,
+  llm_enabled    INTEGER DEFAULT 0,
+  llm_url        TEXT    DEFAULT '',
+  llm_key        TEXT    DEFAULT '',
+  llm_model      TEXT    DEFAULT '',
+  llm_prompt     TEXT    DEFAULT '',
+  updated_at     TEXT    DEFAULT (datetime('now','localtime'))
+);
 `
 
 export async function createDatabase(filePath) {
@@ -518,6 +536,38 @@ class GM_Database {
 
   userCount() {
     return this._get('SELECT COUNT(*) as n FROM users')?.n || 0
+  }
+
+  // ── Image rules ──────────────────────────────────────────────────────────
+
+  // Returns rules for a specific group, falling back to global (group_id=0).
+  // API keys (ocr_key, nsfw_key, llm_key, llm_url, etc.) always come from global row.
+  getImageRules(groupId) {
+    const global = this._get('SELECT * FROM image_rules WHERE group_id=0') || {}
+    if (!groupId) return global
+    const row    = this._get('SELECT * FROM image_rules WHERE group_id=?', [groupId]) || {}
+    return {
+      ...global,
+      qr_enabled:     row.qr_enabled     ?? global.qr_enabled     ?? 0,
+      qr_block_all:   row.qr_block_all   ?? global.qr_block_all   ?? 0,
+      ocr_enabled:    row.ocr_enabled     ?? global.ocr_enabled    ?? 0,
+      nsfw_enabled:   row.nsfw_enabled    ?? global.nsfw_enabled   ?? 0,
+      nsfw_threshold: row.nsfw_threshold  ?? global.nsfw_threshold ?? 0.7,
+      llm_enabled:    row.llm_enabled     ?? global.llm_enabled    ?? 0,
+    }
+  }
+
+  setImageRules(groupId, fields) {
+    const COLS = ['qr_enabled','qr_block_all','ocr_enabled','ocr_url','ocr_key',
+                  'nsfw_enabled','nsfw_url','nsfw_key','nsfw_threshold',
+                  'llm_enabled','llm_url','llm_key','llm_model','llm_prompt']
+    const existing = this._get('SELECT * FROM image_rules WHERE group_id=?', [groupId]) || {}
+    const merged = { ...existing, ...fields, group_id: groupId }
+    this._run(
+      `INSERT OR REPLACE INTO image_rules (group_id,${COLS.join(',')},updated_at) VALUES (?,${COLS.map(()=>'?').join(',')},datetime('now','localtime'))`,
+      [groupId, ...COLS.map(c => merged[c] ?? null)]
+    )
+    this._save()
   }
 
   // ── Migration from legacy config ─────────────────────────────────────

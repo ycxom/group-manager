@@ -117,6 +117,7 @@ tr:hover td{background:var(--bg3)}
       <button data-p="violations">违规记录</button>
       <hr>
       <button data-p="categories">组别</button>
+      <button data-p="imageconfig">图片处理</button>
       <button data-p="users">系统用户</button>
     </nav>
     <main id="main"></main>
@@ -802,8 +803,92 @@ async function renderUsers() {
   }
 }
 
+// ── 图片处理配置 ───────────────────────────────────────────────────────────────
+let imgScope = 0  // 0 = global, or group_id
+
+async function renderImageConfig() {
+  const isSA = me?.role === 'superadmin'
+  const M = document.getElementById('main'); M.innerHTML = ''
+
+  // ── scope selector ──
+  const topCard = h('div',{cls:'card'})
+  topCard.appendChild(h('h2',{},'图片处理'))
+  const sb = h('div',{cls:'sbar'}); sb.appendChild(h('label',{},'作用范围：'))
+  const scopeSel = h('select',{onchange:async(e)=>{ imgScope=+e.target.value; await renderImageConfig() }})
+  const g0 = h('option',{value:'0'},'全局默认'); if(imgScope===0) g0.selected=true; scopeSel.appendChild(g0)
+  for(const g of groups){
+    const o=h('option',{value:String(g.group_id)},`群 ${g.group_id}`); if(g.group_id===imgScope) o.selected=true; scopeSel.appendChild(o)
+  }
+  sb.appendChild(scopeSel); topCard.appendChild(sb)
+  if(imgScope!==0) topCard.appendChild(h('p',{style:'color:var(--dim);font-size:12px;margin-top:6px'},'⚠ 单群设置仅覆盖开关，API URL / Key 始终使用全局配置'))
+  M.appendChild(topCard)
+
+  const data = await api('/api/image-rules/get', { groupId: imgScope }); if(!data) return
+  const r = data.rules || {}
+
+  // ── helper: feature card ──
+  function featureCard(title, enableKey, enableLabel, fields, extraNote) {
+    const card = h('div',{cls:'card'})
+    card.appendChild(h('h2',{},title))
+    if(extraNote) card.appendChild(h('p',{style:'color:var(--dim);font-size:12px;margin-bottom:10px'},extraNote))
+
+    const enabled = h('input',{type:'checkbox',id:`chk_${enableKey}`}); enabled.checked = !!r[enableKey]
+    const lbl = h('label',{style:'display:flex;align-items:center;gap:8px;margin-bottom:12px'})
+    lbl.appendChild(enabled); lbl.appendChild(document.createTextNode(enableLabel)); card.appendChild(lbl)
+
+    const fieldEls = {}
+    for(const [key, label, placeholder, type] of fields) {
+      const row = h('div',{style:'display:grid;grid-template-columns:140px 1fr;align-items:center;gap:8px;margin-bottom:8px'})
+      row.appendChild(h('label',{style:'font-size:12px;color:var(--dim)'},label))
+      const inp = type==='checkbox'
+        ? (() => { const c=h('input',{type:'checkbox'}); c.checked=!!r[key]; return c })()
+        : h('input',{type:type||'text',placeholder:placeholder||'',value:r[key]||'',style:'flex:1'})
+      if(type==='password') inp.type='password'
+      row.appendChild(inp); card.appendChild(row); fieldEls[key]=inp
+    }
+
+    if(isSA){
+      const btn=h('button',{cls:'primary',style:'margin-top:8px',onclick:async()=>{
+        const body={groupId:imgScope,[enableKey]:enabled.checked?1:0}
+        for(const [key,,,,noGlobal] of fields){
+          if(imgScope===0||!noGlobal) body[key]=fieldEls[key].type==='checkbox'?(fieldEls[key].checked?1:0):fieldEls[key].value
+        }
+        await api('/api/image-rules/set',body); showOk(`已保存: ${title}`)
+      }},'保存')
+      card.appendChild(btn)
+    }
+    return card
+  }
+
+  // QR 码
+  M.appendChild(featureCard('二维码检测', 'qr_enabled', '启用二维码识别（jsqr，无需 API）', [
+    ['qr_block_all', '拦截所有二维码', '', 'checkbox'],
+  ], '开启后扫描图片中的二维码内容，命中关键词时撤回（或启用"拦截所有"直接撤回任意二维码）。'))
+
+  // OCR
+  M.appendChild(featureCard('OCR 文字识别', 'ocr_enabled', '启用 OCR 文字识别', [
+    ['ocr_url', 'API URL', 'POST { url } → { text }', 'text', true],
+    ['ocr_key', 'API Key', '（可选）', 'password', true],
+  ], '识别图片中文字并与关键词匹配。API 格式: POST {"url":"..."} → {"text":"..."}'))
+
+  // NSFW
+  M.appendChild(featureCard('涩图检测 (NSFW)', 'nsfw_enabled', '启用涩图检测', [
+    ['nsfw_url',       'API URL',   'POST { url } → { score: 0~1 }', 'text', true],
+    ['nsfw_key',       'API Key',   '（可选）', 'password', true],
+    ['nsfw_threshold', '置信阈值',  '0.0 ~ 1.0（默认 0.7）', 'number'],
+  ], 'API 格式: POST {"url":"..."} → {"score":0.85} 或 {"nsfw":true}'))
+
+  // LLM
+  M.appendChild(featureCard('LLM 图片分析', 'llm_enabled', '启用 LLM 视觉分析', [
+    ['llm_url',    'API URL',    'OpenAI-compatible /v1/chat/completions', 'text', true],
+    ['llm_key',    'API Key',    'Bearer token', 'password', true],
+    ['llm_model',  '模型名',     'gpt-4o / qwen-vl-plus / ...', 'text', true],
+    ['llm_prompt', '审核提示词', '（留空使用默认）', 'text', true],
+  ], '回复约定: 无违规→ "OK"，有违规→ "VIOLATION: 原因"。使用任意 OpenAI 兼容视觉 API。'))
+}
+
 // ── Navigation ─────────────────────────────────────────────────────────────
-const pageMap = { dashboard:renderDashboard, groups:renderGroups, keywords:renderKeywords, exempt:renderExempt, violations:renderViolations, users:renderUsers, categories:renderCategories }
+const pageMap = { dashboard:renderDashboard, groups:renderGroups, keywords:renderKeywords, exempt:renderExempt, violations:renderViolations, users:renderUsers, categories:renderCategories, imageconfig:renderImageConfig }
 let curPage = 'dashboard'
 
 async function goTo(p) {

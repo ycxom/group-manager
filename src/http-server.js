@@ -229,6 +229,24 @@ export class HttpServer {
       return this._ok(res, { removed: db.removeCategoryExempt(+d.categoryId, +d.userId) })
     }
 
+    // ── Image rules ──
+    if (url === '/api/image-rules/get') {
+      const gid = d.groupId != null ? +d.groupId : 0
+      if (gid !== 0 && !this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
+      return this._ok(res, { rules: db.getImageRules(gid) })
+    }
+    if (url === '/api/image-rules/set') {
+      if (sess.role !== 'superadmin') return this._err(res, 403, '仅超级管理员可修改图片处理设置')
+      const gid = d.groupId != null ? +d.groupId : 0
+      const allowed = ['qr_enabled','qr_block_all','ocr_enabled','ocr_url','ocr_key',
+                       'nsfw_enabled','nsfw_url','nsfw_key','nsfw_threshold',
+                       'llm_enabled','llm_url','llm_key','llm_model','llm_prompt']
+      const fields = {}
+      for (const k of allowed) if (k in d) fields[k] = d[k]
+      db.setImageRules(gid, fields)
+      return this._ok(res, { ok: true })
+    }
+
     // ── Violations ──
     if (url === '/api/violation/list') {
       if (sess.role === 'superadmin') return this._ok(res, { violations: db.listViolations(d.groupId ?? null) })
