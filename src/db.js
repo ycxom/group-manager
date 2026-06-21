@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS image_rules (
   qr_block_all   INTEGER DEFAULT 0,
   ocr_enabled    INTEGER DEFAULT 0,
   ocr_langs      TEXT    DEFAULT 'chi_sim+eng',
+  ocr_url        TEXT    DEFAULT '',
   nsfw_enabled   INTEGER DEFAULT 0,
   nsfw_url       TEXT    DEFAULT '',
   nsfw_key       TEXT    DEFAULT '',
@@ -163,6 +164,7 @@ export async function createDatabase(filePath) {
 
   // Migrations for columns added after initial release
   try { db.run("ALTER TABLE image_rules ADD COLUMN ocr_langs TEXT DEFAULT 'chi_sim+eng'") } catch {}
+  try { db.run("ALTER TABLE image_rules ADD COLUMN ocr_url TEXT DEFAULT ''") } catch {}
   try { db.run("ALTER TABLE violations ADD COLUMN last_content TEXT DEFAULT ''") } catch {}
 
   const gm = new GM_Database(db, filePath)
@@ -714,7 +716,7 @@ class GM_Database {
   }
 
   setImageRules(groupId, fields) {
-    const COLS = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs',
+    const COLS = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs','ocr_url',
                   'nsfw_enabled','nsfw_url','nsfw_key','nsfw_threshold',
                   'llm_enabled','llm_url','llm_key','llm_model','llm_prompt']
     const existing = this._get('SELECT * FROM image_rules WHERE group_id=?', [groupId]) || {}

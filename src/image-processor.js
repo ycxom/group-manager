@@ -64,6 +64,24 @@ async function ocrLocal(buf, langs) {
   }
 }
 
+// ── PaddleOCR HTTP 服务（可选，中文准确率远高于 tesseract）───────────────────
+async function ocrPaddle(buf, apiUrl) {
+  try {
+    const resp = await fetch(`${apiUrl}/ocr`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ b64: buf.toString('base64') }),
+      signal: AbortSignal.timeout(30_000)
+    })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const data = await resp.json()
+    return data.text?.trim() || null
+  } catch (e) {
+    console.error('[ImageProc] PaddleOCR 调用失败:', e.message)
+    return null
+  }
+}
+
 // ── NSFW 检测（外部 API）─────────────────────────────────────────────────────
 // 接口格式：POST { url } → { score: 0.0~1.0 }  或  { nsfw: true }
 async function checkNSFW(imageUrl, apiUrl, apiKey, threshold) {
@@ -139,7 +157,11 @@ export async function analyzeImage(imageUrl, rules) {
       tasks.push(bufP.then(buf => extractQR(buf)).then(v => { out.qr = v }).catch(e => { console.error('[ImageProc] QR 识别失败:', e.message) }))
     }
     if (rules.ocr_enabled) {
-      tasks.push(bufP.then(buf => ocrLocal(buf, rules.ocr_langs)).then(v => { out.ocr = v }).catch(e => { console.error('[ImageProc] OCR 失败:', e.message) }))
+      if (rules.ocr_url) {
+        tasks.push(bufP.then(buf => ocrPaddle(buf, rules.ocr_url)).then(v => { out.ocr = v }).catch(e => { console.error('[ImageProc] PaddleOCR 失败:', e.message) }))
+      } else {
+        tasks.push(bufP.then(buf => ocrLocal(buf, rules.ocr_langs)).then(v => { out.ocr = v }).catch(e => { console.error('[ImageProc] OCR 失败:', e.message) }))
+      }
     }
   }
 

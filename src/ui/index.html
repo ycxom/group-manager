@@ -904,9 +904,10 @@ async function renderImageConfig() {
   ], '开启后扫描图片中的二维码内容，命中关键词时撤回（或启用"拦截所有"直接撤回任意二维码）。'))
 
   // OCR
-  M.appendChild(featureCard('OCR 文字识别', 'ocr_enabled', '启用 OCR 文字识别（本地 tesseract.js，无需外部 API）', [
-    ['ocr_langs', '识别语言', 'chi_sim+eng / eng / chi_tra+eng / jpn+eng', 'text'],
-  ], '使用 tesseract.js 在本地识别图片文字并与关键词匹配。语言代码用 + 连接，首次使用新语言会自动下载语言包。'))
+  M.appendChild(featureCard('OCR 文字识别', 'ocr_enabled', '启用 OCR 文字识别', [
+    ['ocr_url',   'PaddleOCR URL', 'http://127.0.0.1:8866（留空则用内置 tesseract）', 'text', true],
+    ['ocr_langs', 'tesseract 语言', 'chi_sim+eng（PaddleOCR URL 为空时生效）', 'text'],
+  ], '配置了 PaddleOCR URL 时优先使用 PaddleOCR（中文准确率更高），否则回退到本地 tesseract.js。PaddleOCR 部署见 paddle-ocr/ 目录。'))
 
   // NSFW
   M.appendChild(featureCard('涩图检测 (NSFW)', 'nsfw_enabled', '启用涩图检测', [
