@@ -705,6 +705,11 @@ class GM_Database {
     return !!this._get('SELECT 1 FROM group_category WHERE group_id=?', [groupId])
   }
 
+  getGroupCategoryIds(groupId) {
+    return this._all('SELECT category_id FROM group_category WHERE group_id=?', [groupId])
+      .map(r => r.category_id)
+  }
+
   setImageRules(groupId, fields) {
     const COLS = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs',
                   'nsfw_enabled','nsfw_url','nsfw_key','nsfw_threshold',

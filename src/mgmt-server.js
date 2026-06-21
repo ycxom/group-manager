@@ -123,7 +123,17 @@ export class ManagementServer {
 
       const result = { action: action.action, messageId: action.messageId, groupId, userId }
       if (action.action === 'recall+kick') {
-        result.kickGroups = db.listGroups().filter(g => g.enabled).map(g => g.group_id)
+        // 若群属于组别，踢出该组别内所有群；否则仅踢出当前群
+        const catIds = db.getGroupCategoryIds(groupId)
+        if (catIds.length > 0) {
+          const kickSet = new Set()
+          for (const catId of catIds) {
+            for (const g of db.getCategoryGroups(catId)) kickSet.add(g.group_id)
+          }
+          result.kickGroups = [...kickSet]
+        } else {
+          result.kickGroups = [groupId]
+        }
       }
       return this._reply(ws, true, result, _id)
     }

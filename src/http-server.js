@@ -68,9 +68,9 @@ export class HttpServer {
     this.db      = db
     this.recall  = recall
     this.uiPort  = config.get('management.uiPort', 8766)
-    this._sseClients = new Set()  // res objects for SSE
+    this._sseClients = new Map()  // res → sess
 
-    // Forward recall/kick events to SSE clients
+    // Forward recall/kick/scan events to SSE clients (filtered by session permissions)
     recall.on((ev) => this._sseEmit(ev))
   }
 
@@ -87,8 +87,14 @@ export class HttpServer {
 
   _sseEmit(data) {
     const line = `data: ${JSON.stringify(data)}\n\n`
-    for (const res of this._sseClients) {
-      try { res.write(line) } catch { this._sseClients.delete(res) }
+    for (const [res, sess] of this._sseClients) {
+      try {
+        // 有 groupId 的事件按权限过滤：非超管只收自己有权限的群的日志
+        if (data.groupId && sess.role !== 'superadmin') {
+          if (!this.db.hasGroupAccess(sess.username, data.groupId)) continue
+        }
+        res.write(line)
+      } catch { this._sseClients.delete(res) }
     }
   }
 
@@ -114,7 +120,7 @@ export class HttpServer {
         'X-Accel-Buffering': 'no'
       })
       res.write(`data: ${JSON.stringify({ type: 'connected', user: sess.username })}\n\n`)
-      this._sseClients.add(res)
+      this._sseClients.set(res, sess)
 
       const ping = setInterval(() => {
         try { res.write(': ping\n\n') } catch { clearInterval(ping); this._sseClients.delete(res) }
