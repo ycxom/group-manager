@@ -1,7 +1,7 @@
-# CPU 版（无需 GPU/CUDA，适合任何机器）
 FROM python:3.10-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libglib2.0-0 libsm6 libxrender1 libxext6 libgl1 libgomp1 \
@@ -9,8 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install --no-cache-dir \
     -i https://pypi.tuna.tsinghua.edu.cn/simple \
-    paddlepaddle==2.6.2 \
-    "paddleocr<3.0.0" \
+    rapidocr-onnxruntime \
     fastapi==0.115.0 \
     "uvicorn[standard]==0.30.6" \
     httpx==0.27.0
