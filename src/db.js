@@ -91,8 +91,7 @@ CREATE TABLE IF NOT EXISTS image_rules (
   qr_enabled     INTEGER DEFAULT 0,
   qr_block_all   INTEGER DEFAULT 0,
   ocr_enabled    INTEGER DEFAULT 0,
-  ocr_url        TEXT    DEFAULT '',
-  ocr_key        TEXT    DEFAULT '',
+  ocr_langs      TEXT    DEFAULT 'chi_sim+eng',
   nsfw_enabled   INTEGER DEFAULT 0,
   nsfw_url       TEXT    DEFAULT '',
   nsfw_key       TEXT    DEFAULT '',
@@ -117,6 +116,9 @@ export async function createDatabase(filePath) {
   const raw = fs.existsSync(filePath) ? fs.readFileSync(filePath) : null
   const db  = new SQL.Database(raw)
   db.run(SCHEMA)
+
+  // Migration: add ocr_langs for existing databases that predate local OCR
+  try { db.run("ALTER TABLE image_rules ADD COLUMN ocr_langs TEXT DEFAULT 'chi_sim+eng'") } catch {}
 
   const gm = new GM_Database(db, filePath)
   console.log('[DB] SQLite (sql.js) 初始化完成:', filePath)
@@ -551,6 +553,7 @@ class GM_Database {
       qr_enabled:     row.qr_enabled     ?? global.qr_enabled     ?? 0,
       qr_block_all:   row.qr_block_all   ?? global.qr_block_all   ?? 0,
       ocr_enabled:    row.ocr_enabled     ?? global.ocr_enabled    ?? 0,
+      ocr_langs:      row.ocr_langs       || global.ocr_langs      || 'chi_sim+eng',
       nsfw_enabled:   row.nsfw_enabled    ?? global.nsfw_enabled   ?? 0,
       nsfw_threshold: row.nsfw_threshold  ?? global.nsfw_threshold ?? 0.7,
       llm_enabled:    row.llm_enabled     ?? global.llm_enabled    ?? 0,
@@ -558,7 +561,7 @@ class GM_Database {
   }
 
   setImageRules(groupId, fields) {
-    const COLS = ['qr_enabled','qr_block_all','ocr_enabled','ocr_url','ocr_key',
+    const COLS = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs',
                   'nsfw_enabled','nsfw_url','nsfw_key','nsfw_threshold',
                   'llm_enabled','llm_url','llm_key','llm_model','llm_prompt']
     const existing = this._get('SELECT * FROM image_rules WHERE group_id=?', [groupId]) || {}

@@ -2,8 +2,22 @@
  * 图片内容分析：QR 码提取 / OCR / NSFW 检测 / LLM 分析
  *
  * QR 码：jimp（纯 JS 图像解码）+ jsqr（纯 JS 二维码识别），无需外部 API
- * OCR / NSFW / LLM：通过可配置的外部 HTTP API，格式见下方注释
+ * OCR：tesseract.js 本地识别，按语言缓存 Worker，无需外部 API
+ * NSFW / LLM：通过可配置的外部 HTTP API，格式见下方注释
  */
+
+import { createWorker } from 'tesseract.js'
+
+// Worker 按语言键缓存，避免重复初始化
+const _ocrWorkers = Object.create(null)
+
+function _getOCRWorker(langs) {
+  const key = langs || 'chi_sim+eng'
+  if (!_ocrWorkers[key]) {
+    _ocrWorkers[key] = createWorker(key, 1, { logger: () => {} })
+  }
+  return _ocrWorkers[key]
+}
 
 const IMG_FETCH_TIMEOUT = 10_000
 
@@ -38,19 +52,13 @@ async function extractQR(imageUrl) {
   }
 }
 
-// ── OCR（外部 API）────────────────────────────────────────────────────────────
-// 接口格式：POST { url } → { text: "..." }
-async function ocr(imageUrl, apiUrl, apiKey) {
-  if (!apiUrl) return null
+// ── OCR（tesseract.js 本地识别）───────────────────────────────────────────────
+async function ocrLocal(imageUrl, langs) {
   try {
-    const resp = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
-      body: JSON.stringify({ url: imageUrl }),
-      signal: AbortSignal.timeout(15_000)
-    })
-    const data = await resp.json()
-    return String(data.text || data.result || data.words_result_num || '') || null
+    const buf = await fetchImage(imageUrl)
+    const worker = await _getOCRWorker(langs)
+    const { data: { text } } = await worker.recognize(buf)
+    return text.trim() || null
   } catch (e) {
     console.error('[ImageProc] OCR 失败:', e.message)
     return null
@@ -113,7 +121,7 @@ async function callLLM(imageUrl, apiUrl, apiKey, model, prompt) {
 // ── 主入口 ────────────────────────────────────────────────────────────────────
 /**
  * @param {string} imageUrl
- * @param {{ qr_enabled, qr_block_all, ocr_enabled, ocr_url, ocr_key,
+ * @param {{ qr_enabled, qr_block_all, ocr_enabled, ocr_langs,
  *            nsfw_enabled, nsfw_url, nsfw_key, nsfw_threshold,
  *            llm_enabled, llm_url, llm_key, llm_model, llm_prompt }} rules
  * @returns {{ qr:string|null, ocr:string|null, nsfw:boolean, llm:string|null }}
@@ -126,8 +134,8 @@ export async function analyzeImage(imageUrl, rules) {
   if (rules.qr_enabled || rules.qr_block_all) {
     tasks.push(extractQR(imageUrl).then(v => { out.qr = v }))
   }
-  if (rules.ocr_enabled && rules.ocr_url) {
-    tasks.push(ocr(imageUrl, rules.ocr_url, rules.ocr_key).then(v => { out.ocr = v }))
+  if (rules.ocr_enabled) {
+    tasks.push(ocrLocal(imageUrl, rules.ocr_langs).then(v => { out.ocr = v }))
   }
   if (rules.nsfw_enabled && rules.nsfw_url) {
     tasks.push(checkNSFW(imageUrl, rules.nsfw_url, rules.nsfw_key, rules.nsfw_threshold).then(v => { out.nsfw = v }))

@@ -238,7 +238,7 @@ export class HttpServer {
     if (url === '/api/image-rules/set') {
       if (sess.role !== 'superadmin') return this._err(res, 403, '仅超级管理员可修改图片处理设置')
       const gid = d.groupId != null ? +d.groupId : 0
-      const allowed = ['qr_enabled','qr_block_all','ocr_enabled','ocr_url','ocr_key',
+      const allowed = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs',
                        'nsfw_enabled','nsfw_url','nsfw_key','nsfw_threshold',
                        'llm_enabled','llm_url','llm_key','llm_model','llm_prompt']
       const fields = {}
