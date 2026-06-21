@@ -86,6 +86,38 @@ CREATE TABLE IF NOT EXISTS category_exempt_users (
   created_at  TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(category_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS ocr_keywords (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id   INTEGER DEFAULT 0,
+  keyword    TEXT NOT NULL,
+  created_by TEXT,
+  created_at TEXT DEFAULT (datetime('now','localtime')),
+  UNIQUE(group_id, keyword)
+);
+CREATE TABLE IF NOT EXISTS category_ocr_keywords (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_id INTEGER NOT NULL,
+  keyword     TEXT NOT NULL,
+  created_by  TEXT,
+  created_at  TEXT DEFAULT (datetime('now','localtime')),
+  UNIQUE(category_id, keyword)
+);
+CREATE TABLE IF NOT EXISTS qr_keywords (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id   INTEGER DEFAULT 0,
+  keyword    TEXT NOT NULL,
+  created_by TEXT,
+  created_at TEXT DEFAULT (datetime('now','localtime')),
+  UNIQUE(group_id, keyword)
+);
+CREATE TABLE IF NOT EXISTS category_qr_keywords (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_id INTEGER NOT NULL,
+  keyword     TEXT NOT NULL,
+  created_by  TEXT,
+  created_at  TEXT DEFAULT (datetime('now','localtime')),
+  UNIQUE(category_id, keyword)
+);
 CREATE TABLE IF NOT EXISTS image_rules (
   group_id       INTEGER PRIMARY KEY,
   qr_enabled     INTEGER DEFAULT 0,
@@ -251,6 +283,90 @@ class GM_Database {
     const changed = this._db.getRowsModified() > 0
     this._save()
     return changed
+  }
+
+  // ── OCR Keywords ────────────────────────────────────────────────────────
+
+  getEffectiveOCRKeywords(groupId) {
+    const fromKw = this._all(
+      'SELECT DISTINCT keyword FROM ocr_keywords WHERE group_id = 0 OR group_id = ?', [groupId]
+    ).map(r => r.keyword)
+    const fromCat = this._all(`
+      SELECT DISTINCT ck.keyword FROM category_ocr_keywords ck
+      JOIN group_category gc ON gc.category_id = ck.category_id
+      WHERE gc.group_id = ?
+    `, [groupId]).map(r => r.keyword)
+    return [...new Set([...fromKw, ...fromCat])].sort()
+  }
+
+  listOCRKeywords(groupId) {
+    return this._all('SELECT * FROM ocr_keywords WHERE group_id=? ORDER BY created_at', [groupId])
+  }
+
+  addOCRKeyword(groupId, keyword, createdBy = null) {
+    try { this._run('INSERT INTO ocr_keywords (group_id, keyword, created_by) VALUES (?,?,?)', [groupId, keyword, createdBy]); return true }
+    catch { return false }
+  }
+
+  removeOCRKeyword(groupId, keyword) {
+    this._db.run('DELETE FROM ocr_keywords WHERE group_id=? AND keyword=?', [groupId, keyword])
+    const changed = this._db.getRowsModified() > 0; this._save(); return changed
+  }
+
+  listCategoryOCRKeywords(categoryId) {
+    return this._all('SELECT * FROM category_ocr_keywords WHERE category_id=? ORDER BY created_at', [categoryId])
+  }
+
+  addCategoryOCRKeyword(categoryId, keyword, createdBy = null) {
+    try { this._run('INSERT INTO category_ocr_keywords (category_id, keyword, created_by) VALUES (?,?,?)', [categoryId, keyword, createdBy]); return true }
+    catch { return false }
+  }
+
+  removeCategoryOCRKeyword(categoryId, keyword) {
+    this._db.run('DELETE FROM category_ocr_keywords WHERE category_id=? AND keyword=?', [categoryId, keyword])
+    const changed = this._db.getRowsModified() > 0; this._save(); return changed
+  }
+
+  // ── QR Keywords ─────────────────────────────────────────────────────────
+
+  getEffectiveQRKeywords(groupId) {
+    const fromKw = this._all(
+      'SELECT DISTINCT keyword FROM qr_keywords WHERE group_id = 0 OR group_id = ?', [groupId]
+    ).map(r => r.keyword)
+    const fromCat = this._all(`
+      SELECT DISTINCT ck.keyword FROM category_qr_keywords ck
+      JOIN group_category gc ON gc.category_id = ck.category_id
+      WHERE gc.group_id = ?
+    `, [groupId]).map(r => r.keyword)
+    return [...new Set([...fromKw, ...fromCat])].sort()
+  }
+
+  listQRKeywords(groupId) {
+    return this._all('SELECT * FROM qr_keywords WHERE group_id=? ORDER BY created_at', [groupId])
+  }
+
+  addQRKeyword(groupId, keyword, createdBy = null) {
+    try { this._run('INSERT INTO qr_keywords (group_id, keyword, created_by) VALUES (?,?,?)', [groupId, keyword, createdBy]); return true }
+    catch { return false }
+  }
+
+  removeQRKeyword(groupId, keyword) {
+    this._db.run('DELETE FROM qr_keywords WHERE group_id=? AND keyword=?', [groupId, keyword])
+    const changed = this._db.getRowsModified() > 0; this._save(); return changed
+  }
+
+  listCategoryQRKeywords(categoryId) {
+    return this._all('SELECT * FROM category_qr_keywords WHERE category_id=? ORDER BY created_at', [categoryId])
+  }
+
+  addCategoryQRKeyword(categoryId, keyword, createdBy = null) {
+    try { this._run('INSERT INTO category_qr_keywords (category_id, keyword, created_by) VALUES (?,?,?)', [categoryId, keyword, createdBy]); return true }
+    catch { return false }
+  }
+
+  removeCategoryQRKeyword(categoryId, keyword) {
+    this._db.run('DELETE FROM category_qr_keywords WHERE category_id=? AND keyword=?', [categoryId, keyword])
+    const changed = this._db.getRowsModified() > 0; this._save(); return changed
   }
 
   // ── Admins ──────────────────────────────────────────────────────────────

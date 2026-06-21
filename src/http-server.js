@@ -190,12 +190,73 @@ export class HttpServer {
     if (url === '/api/keyword/add') {
       const gid = d.groupId ?? 0
       if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
+      if (gid > 0 && db.isGroupInCategory(gid)) return this._err(res, 400, '该群已加入组别，请在组别中配置关键词')
       return this._ok(res, { added: db.addKeyword(gid, String(d.keyword), sess.username) })
     }
     if (url === '/api/keyword/remove') {
       const gid = d.groupId ?? 0
       if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
       return this._ok(res, { removed: db.removeKeyword(gid, String(d.keyword)) })
+    }
+
+    // ── OCR Keywords ──
+    if (url === '/api/ocr-keyword/list') {
+      const gid = d.groupId ?? 0
+      if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
+      return this._ok(res, { keywords: db.listOCRKeywords(gid) })
+    }
+    if (url === '/api/ocr-keyword/add') {
+      const gid = d.groupId ?? 0
+      if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
+      if (gid > 0 && db.isGroupInCategory(gid)) return this._err(res, 400, '该群已加入组别，请在组别中配置关键词')
+      return this._ok(res, { added: db.addOCRKeyword(gid, String(d.keyword), sess.username) })
+    }
+    if (url === '/api/ocr-keyword/remove') {
+      const gid = d.groupId ?? 0
+      if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
+      return this._ok(res, { removed: db.removeOCRKeyword(gid, String(d.keyword)) })
+    }
+    if (url === '/api/category/ocr-keyword/list') {
+      if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
+      return this._ok(res, { keywords: db.listCategoryOCRKeywords(+d.categoryId) })
+    }
+    if (url === '/api/category/ocr-keyword/add') {
+      if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
+      return this._ok(res, { added: db.addCategoryOCRKeyword(+d.categoryId, String(d.keyword), sess.username) })
+    }
+    if (url === '/api/category/ocr-keyword/remove') {
+      if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
+      return this._ok(res, { removed: db.removeCategoryOCRKeyword(+d.categoryId, String(d.keyword)) })
+    }
+
+    // ── QR Keywords ──
+    if (url === '/api/qr-keyword/list') {
+      const gid = d.groupId ?? 0
+      if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
+      return this._ok(res, { keywords: db.listQRKeywords(gid) })
+    }
+    if (url === '/api/qr-keyword/add') {
+      const gid = d.groupId ?? 0
+      if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
+      if (gid > 0 && db.isGroupInCategory(gid)) return this._err(res, 400, '该群已加入组别，请在组别中配置关键词')
+      return this._ok(res, { added: db.addQRKeyword(gid, String(d.keyword), sess.username) })
+    }
+    if (url === '/api/qr-keyword/remove') {
+      const gid = d.groupId ?? 0
+      if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
+      return this._ok(res, { removed: db.removeQRKeyword(gid, String(d.keyword)) })
+    }
+    if (url === '/api/category/qr-keyword/list') {
+      if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
+      return this._ok(res, { keywords: db.listCategoryQRKeywords(+d.categoryId) })
+    }
+    if (url === '/api/category/qr-keyword/add') {
+      if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
+      return this._ok(res, { added: db.addCategoryQRKeyword(+d.categoryId, String(d.keyword), sess.username) })
+    }
+    if (url === '/api/category/qr-keyword/remove') {
+      if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
+      return this._ok(res, { removed: db.removeCategoryQRKeyword(+d.categoryId, String(d.keyword)) })
     }
 
     // ── Exempt ──
@@ -207,6 +268,7 @@ export class HttpServer {
     if (url === '/api/exempt/add') {
       const gid = d.groupId ?? 0
       if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
+      if (gid > 0 && db.isGroupInCategory(gid)) return this._err(res, 400, '该群已加入组别，请在组别中配置豁免用户')
       return this._ok(res, { added: db.addExempt(gid, +d.userId) })
     }
     if (url === '/api/exempt/remove') {

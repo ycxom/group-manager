@@ -260,9 +260,11 @@ function kwScopeSel(cur, onChange) {
     }
     s.appendChild(grp)
   }
-  if (groups.length) {
-    const grp = document.createElement('optgroup'); grp.label = '── 群组 ──'
-    for (const g of groups) {
+  // 只显示未加入任何组别的群，加入组别的群只能通过组别统一配置
+  const freeGroups = groups.filter(g => !g.categories?.length)
+  if (freeGroups.length) {
+    const grp = document.createElement('optgroup'); grp.label = '── 独立群组 ──'
+    for (const g of freeGroups) {
       const v = JSON.stringify({ type: 'group', id: g.group_id })
       const o = h('option', { value: v }, `群 ${g.group_id}`)
       if (cur.type === 'group' && cur.id === g.group_id) o.selected = true
@@ -361,6 +363,7 @@ async function renderGroups() {
 }
 
 // kwScope: { type:'global'|'group'|'category', id:number }
+let kwType  = 'text'  // 'text' | 'ocr' | 'qr'
 let kwScope = { type: 'global', id: 0 }
 
 async function renderKeywords() {
@@ -376,55 +379,62 @@ async function renderKeywords() {
     return
   }
 
-  // Fetch keywords for current scope
-  let data
-  if (kwScope.type === 'category') {
-    data = await api('/api/category/keyword/list', { categoryId: kwScope.id })
-  } else {
-    data = await api('/api/keyword/list', { groupId: kwScope.type === 'global' ? 0 : kwScope.id })
-  }
+  // Resolve API base URLs from kwType + kwScope
+  const apiBase = {
+    text: { grp: '/api/keyword',     cat: '/api/category/keyword' },
+    ocr:  { grp: '/api/ocr-keyword', cat: '/api/category/ocr-keyword' },
+    qr:   { grp: '/api/qr-keyword',  cat: '/api/category/qr-keyword' },
+  }[kwType]
+  const isCat  = kwScope.type === 'category'
+  const base   = isCat ? apiBase.cat : apiBase.grp
+  const pkey   = isCat ? { categoryId: kwScope.id } : { groupId: kwScope.type === 'global' ? 0 : kwScope.id }
+
+  const data = await api(base + '/list', pkey)
   if (!data) return
 
   const M = document.getElementById('main'); M.innerHTML=''
   const card = h('div',{cls:'card'}); card.appendChild(h('h2',{},'关键词管理'))
 
-  const sb = h('div',{cls:'sbar'}); sb.appendChild(h('label',{},'作用域：'))
-  sb.appendChild(kwScopeSel(kwScope, (scope) => { kwScope = scope; renderKeywords() }))
-  card.appendChild(sb)
+  // Type selector
+  const tsb = h('div',{cls:'sbar'}); tsb.appendChild(h('label',{},'关键词类型：'))
+  const typeSel = h('select',{onchange:(e)=>{ kwType=e.target.value; renderKeywords() }})
+  for(const [v,lbl] of [['text','文字关键词'],['ocr','OCR 关键词'],['qr','二维码关键词']]) {
+    const o=h('option',{value:v},lbl); if(kwType===v) o.selected=true; typeSel.appendChild(o)
+  }
+  tsb.appendChild(typeSel); card.appendChild(tsb)
+
+  // Scope selector
+  const ssb = h('div',{cls:'sbar'}); ssb.appendChild(h('label',{},'作用域：'))
+  ssb.appendChild(kwScopeSel(kwScope, (scope) => { kwScope = scope; renderKeywords() }))
+  card.appendChild(ssb)
+
+  if (kwType==='ocr') card.appendChild(h('p',{style:'color:var(--dim);font-size:12px;margin:2px 0 8px'},'OCR 关键词仅匹配图片文字识别结果，与文字关键词相互独立'))
+  if (kwType==='qr')  card.appendChild(h('p',{style:'color:var(--dim);font-size:12px;margin:2px 0 8px'},'二维码关键词仅匹配二维码解析内容，与文字关键词相互独立'))
 
   const ki=h('input',{type:'text',placeholder:'关键词',style:'flex:1;min-width:160px'})
-  const scopeLabel = kwScope.type==='global'?' (全局)' : kwScope.type==='category'?` (组别)`:''
+  const scopeLabel = kwScope.type==='global'?' (全局)' : kwScope.type==='category'?' (组别)':''
   const kb=h('button',{cls:'primary',onclick:async()=>{
     const kw=ki.value.trim(); if(!kw)return showErr('请输入关键词')
-    let r
-    if (kwScope.type === 'category') {
-      r = await api('/api/category/keyword/add', { categoryId: kwScope.id, keyword: kw })
-    } else {
-      r = await api('/api/keyword/add', { groupId: kwScope.type==='global'?0:kwScope.id, keyword: kw })
-    }
+    const r = await api(base + '/add', { ...pkey, keyword: kw })
     if(r!==null){showOk(`已添加: ${kw}`);ki.value='';renderKeywords()}
   }},`添加${scopeLabel}`)
   card.appendChild(h('div',{cls:'row',style:'margin-bottom:10px'},ki,kb))
 
   const kws = data.keywords || []
   if (!kws.length) { card.appendChild(h('div',{cls:'empty'},'暂无关键词')); M.appendChild(card); return }
-  const t=h('table'); t.innerHTML='<thead><tr><th>关键词</th><th>添加者</th><th>时间</th><th>操作</th></tr></thead>'
-  const tb=h('tbody')
+  const tbl=h('table'); tbl.innerHTML='<thead><tr><th>关键词</th><th>添加者</th><th>时间</th><th>操作</th></tr></thead>'
+  const tbody=h('tbody')
   kws.forEach(k=>{
     const tr=h('tr')
     const rb=h('button',{cls:'danger',onclick:async()=>{
-      if (kwScope.type === 'category') {
-        await api('/api/category/keyword/remove', { categoryId: kwScope.id, keyword: k.keyword })
-      } else {
-        await api('/api/keyword/remove', { groupId: k.group_id, keyword: k.keyword })
-      }
+      await api(base + '/remove', { ...pkey, keyword: k.keyword })
       showOk(`已删除: ${k.keyword}`); renderKeywords()
     }},'删除')
     const td=h('td'); td.appendChild(rb)
     tr.innerHTML=`<td>${k.keyword}</td><td>${k.created_by||'—'}</td><td>${dt(k.created_at)}</td>`
-    tr.appendChild(td); tb.appendChild(tr)
+    tr.appendChild(td); tbody.appendChild(tr)
   })
-  t.appendChild(tb); card.appendChild(t); M.appendChild(card)
+  tbl.appendChild(tbody); card.appendChild(tbl); M.appendChild(card)
 }
 
 
