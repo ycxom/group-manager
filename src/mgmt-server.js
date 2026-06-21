@@ -116,7 +116,10 @@ export class ManagementServer {
       const event = { groupId, userId, senderRole: senderRole || 'member', messageId, messages: segments || [] }
       const action = await this.recall.processMessage(event, null)
 
-      if (!action) return this._reply(ws, true, { action: 'noop' }, _id)
+      if (!action) {
+        this.recall._emit({ type: 'scan', groupId, userId })
+        return this._reply(ws, true, { action: 'noop' }, _id)
+      }
 
       const result = { action: action.action, messageId: action.messageId, groupId, userId }
       if (action.action === 'recall+kick') {

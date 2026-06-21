@@ -4,6 +4,69 @@ import { WebSocket } from 'ws'
 const GM_WS_URL = 'ws://127.0.0.1:8765'
 const GM_TOKEN  = 'change-this-token'
 
+// Module-level state — survives Yunzai re-instantiating the class per message
+let _ws      = null
+let _callId  = 0
+const _pending = new Map()
+let _ready   = false
+
+function _call(msg) {
+  return new Promise((resolve, reject) => {
+    if (!_ws || _ws.readyState !== WebSocket.OPEN) {
+      return reject(new Error('WS 未连接'))
+    }
+    const id = ++_callId
+    _pending.set(id, { resolve, reject })
+    _ws.send(JSON.stringify({ ...msg, _id: id }))
+    setTimeout(() => {
+      if (_pending.has(id)) {
+        _pending.delete(id)
+        reject(new Error(`超时: ${msg.cmd}`))
+      }
+    }, 10000)
+  })
+}
+
+function _connect() {
+  _ws = new WebSocket(GM_WS_URL)
+  _ws.on('open', () => {
+    _call({ cmd: 'auth', token: GM_TOKEN, role: 'bot' })
+      .then((data) => { _ready = true; console.log('[GM桥接] 已连接并认证:', data.message) })
+      .catch((e) => console.error('[GM桥接] 认证失败:', e.message))
+  })
+  _ws.on('message', (raw) => {
+    let msg
+    try { msg = JSON.parse(raw.toString()) } catch { return }
+    if (msg._id !== undefined) {
+      const cb = _pending.get(msg._id)
+      if (cb) {
+        _pending.delete(msg._id)
+        msg.ok ? cb.resolve(msg.data) : cb.reject(new Error(msg.error))
+      }
+      return
+    }
+    if (msg.event) {
+      const ev = msg.event
+      if (ev.type === 'recall') {
+        console.log(`[GM桥接] 撤回 群${ev.groupId} 用户${ev.userId} 第${ev.violations}次`)
+      } else if (ev.type === 'kick') {
+        console.log(`[GM桥接] 踢出 用户${ev.userId} 累计${ev.violations}次`)
+      }
+    }
+  })
+  _ws.on('close', () => {
+    _ready = false
+    for (const [, cb] of _pending) cb.reject(new Error('连接断开'))
+    _pending.clear()
+    console.log('[GM桥接] 连接断开，5s 后重连')
+    setTimeout(_connect, 5000)
+  })
+  _ws.on('error', (e) => console.error('[GM桥接] WS 错误:', e.message))
+}
+
+// Connect once when the module is first loaded
+_connect()
+
 export class GroupManagerBridge extends plugin {
   constructor() {
     super({
@@ -13,101 +76,22 @@ export class GroupManagerBridge extends plugin {
       priority: 9998,
       rule: [{ reg: '.*', fnc: 'handle', log: false }]
     })
-    this._ws     = null
-    this._callId = 0
-    this._pending = new Map()
-    this._ready  = false
-    this._connect()
   }
-
-  // ──────── WS 连接管理 ────────
-
-  _connect() {
-    this._ws = new WebSocket(GM_WS_URL)
-
-    this._ws.on('open', () => {
-      this._call({ cmd: 'auth', token: GM_TOKEN, role: 'bot' })
-        .then((data) => {
-          this._ready = true
-          console.log('[GM桥接] 已连接并认证:', data.message)
-        })
-        .catch((e) => console.error('[GM桥接] 认证失败:', e.message))
-    })
-
-    this._ws.on('message', (raw) => {
-      let msg
-      try { msg = JSON.parse(raw.toString()) } catch { return }
-
-      // 响应匹配
-      if (msg._id !== undefined) {
-        const cb = this._pending.get(msg._id)
-        if (cb) {
-          this._pending.delete(msg._id)
-          msg.ok ? cb.resolve(msg.data) : cb.reject(new Error(msg.error))
-        }
-        return
-      }
-
-      // 服务端推送事件（可按需扩展处理）
-      if (msg.event) {
-        const ev = msg.event
-        if (ev.type === 'recall') {
-          console.log(`[GM桥接] 撤回 群${ev.groupId} 用户${ev.userId} 第${ev.violations}次`)
-        } else if (ev.type === 'kick') {
-          console.log(`[GM桥接] 踢出 用户${ev.userId} 累计${ev.violations}次`)
-        }
-      }
-    })
-
-    this._ws.on('close', () => {
-      this._ready = false
-      // 拒绝所有待处理请求
-      for (const [, cb] of this._pending) cb.reject(new Error('连接断开'))
-      this._pending.clear()
-      console.log('[GM桥接] 连接断开，5s 后重连')
-      setTimeout(() => this._connect(), 5000)
-    })
-
-    this._ws.on('error', (e) => console.error('[GM桥接] WS 错误:', e.message))
-  }
-
-  _call(msg) {
-    return new Promise((resolve, reject) => {
-      if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
-        return reject(new Error('WS 未连接'))
-      }
-      const id = ++this._callId
-      this._pending.set(id, { resolve, reject })
-      this._ws.send(JSON.stringify({ ...msg, _id: id }))
-      setTimeout(() => {
-        if (this._pending.has(id)) {
-          this._pending.delete(id)
-          reject(new Error(`超时: ${msg.cmd}`))
-        }
-      }, 10000)
-    })
-  }
-
-  // ──────── 消息段规范化 ────────
 
   async _normalizeSegments(message) {
     const result = []
     for (const seg of (message || [])) {
       if (seg.type === 'text') {
         result.push({ type: 'text', text: seg.text || '' })
-
       } else if (seg.type === 'json') {
         result.push({ type: 'json', data: seg.data || '' })
-
       } else if (seg.type === 'forward' || seg.type === 'multimsg' || seg.type === 'long_msg') {
         const id = (seg.data?.id) || seg.resid || ''
         let nodes = []
         if (id) {
           try { nodes = await Bot.getForwardMsg(id) || [] } catch {}
         }
-        // 预取内联节点，避免群管程序再次回调
         result.push({ type: 'forward', id, nodes })
-
       } else {
         result.push(seg)
       }
@@ -115,10 +99,8 @@ export class GroupManagerBridge extends plugin {
     return result
   }
 
-  // ──────── 主处理逻辑 ────────
-
   async handle(e) {
-    if (!e.isGroup || !this._ready) return false
+    if (!e.isGroup || !_ready) return false
 
     let segments
     try {
@@ -130,8 +112,8 @@ export class GroupManagerBridge extends plugin {
 
     let data
     try {
-      data = await this._call({
-        cmd: 'event.message',
+      data = await _call({
+        cmd:        'event.message',
         groupId:    e.group_id,
         userId:     e.user_id,
         senderRole: e.sender?.role || 'member',
@@ -145,13 +127,11 @@ export class GroupManagerBridge extends plugin {
 
     if (!data || data.action === 'noop') return false
 
-    // 发送群消息（回复命令结果）
     if (data.action === 'reply') {
       if (data.text) await e.group.sendMsg(data.text).catch(() => {})
       return false
     }
 
-    // 撤回
     if (data.action === 'recall' || data.action === 'recall+kick') {
       try {
         await e.group.recallMsg(data.messageId)
@@ -160,7 +140,6 @@ export class GroupManagerBridge extends plugin {
         console.error('[GM桥接] 撤回失败:', err.message)
       }
 
-      // 踢出全部白名单群
       if (data.action === 'recall+kick') {
         for (const gid of (data.kickGroups || [])) {
           try {

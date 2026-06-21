@@ -172,8 +172,8 @@ function flash(m, err) {
 function connectSSE() {
   if (es) { es.close(); es = null }
   es = new EventSource('/events', { withCredentials: true })
-  es.onopen = () => setConn(true)
-  es.onerror = () => { setConn(false); setTimeout(connectSSE, 4000) }
+  es.onopen = () => { setConn(true); addLog({ type: 'info', text: 'SSE 已连接，等待实时事件...' }) }
+  es.onerror = () => { setConn(false); addLog({ type: 'info', text: '连接断开，4 秒后重连...' }); setTimeout(connectSSE, 4000) }
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data)
     if (ev.type === 'connected') return
@@ -201,6 +201,12 @@ function addLog(ev) {
   } else if (ev.type === 'kick') {
     el.className = 'kick'
     el.textContent = `[${t}] 踢出 用户${ev.userId} 累计${ev.violations}次`
+  } else if (ev.type === 'scan') {
+    el.style.color = 'var(--dim)'
+    el.textContent = `[${t}] 群${ev.groupId} 用户${ev.userId} 扫描通过`
+  } else if (ev.type === 'info') {
+    el.style.color = 'var(--dim)'
+    el.textContent = `[${t}] ${ev.text}`
   } else return
   lb.appendChild(el); lb.scrollTop = lb.scrollHeight
 }
