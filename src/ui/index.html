@@ -804,7 +804,7 @@ async function renderUsers() {
 }
 
 // ── 图片处理配置 ───────────────────────────────────────────────────────────────
-let imgScope = 0  // 0 = global, or group_id
+let imgScope = { type: 'global', id: 0 }
 
 async function renderImageConfig() {
   const isSA = me?.role === 'superadmin'
@@ -814,17 +814,35 @@ async function renderImageConfig() {
   const topCard = h('div',{cls:'card'})
   topCard.appendChild(h('h2',{},'图片处理'))
   const sb = h('div',{cls:'sbar'}); sb.appendChild(h('label',{},'作用范围：'))
-  const scopeSel = h('select',{onchange:async(e)=>{ imgScope=+e.target.value; await renderImageConfig() }})
-  const g0 = h('option',{value:'0'},'全局默认'); if(imgScope===0) g0.selected=true; scopeSel.appendChild(g0)
-  for(const g of groups){
-    const o=h('option',{value:String(g.group_id)},`群 ${g.group_id}`); if(g.group_id===imgScope) o.selected=true; scopeSel.appendChild(o)
+
+  const scopeSel = h('select', { onchange: (e) => { imgScope = JSON.parse(e.target.value); renderImageConfig() } })
+  if (isSA) {
+    const v = JSON.stringify({ type:'global', id:0 })
+    const o = h('option',{value:v},'全局默认'); if(imgScope.type==='global') o.selected=true; scopeSel.appendChild(o)
+  }
+  if (categories.length) {
+    const grp = document.createElement('optgroup'); grp.label = '── 组别 ──'
+    for (const c of categories) {
+      const v = JSON.stringify({ type:'category', id:c.id })
+      const o = h('option',{value:v},`组别: ${c.name}`); if(imgScope.type==='category'&&imgScope.id===c.id) o.selected=true; grp.appendChild(o)
+    }
+    scopeSel.appendChild(grp)
+  }
+  const freeGroups = groups.filter(g => !g.categories?.length)
+  if (freeGroups.length) {
+    const grp = document.createElement('optgroup'); grp.label = '── 独立群组 ──'
+    for (const g of freeGroups) {
+      const v = JSON.stringify({ type:'group', id:g.group_id })
+      const o = h('option',{value:v},`群 ${g.group_id}`); if(imgScope.type==='group'&&imgScope.id===g.group_id) o.selected=true; grp.appendChild(o)
+    }
+    scopeSel.appendChild(grp)
   }
   sb.appendChild(scopeSel); topCard.appendChild(sb)
-  if(imgScope!==0) topCard.appendChild(h('p',{style:'color:var(--dim);font-size:12px;margin-top:6px'},'⚠ 单群设置仅覆盖开关，API URL / Key 始终使用全局配置'))
-  if(!isSA) topCard.appendChild(h('p',{style:'color:var(--dim);font-size:12px;margin-top:6px'},'仅超级管理员可修改图片处理设置（当前为只读模式）'))
+  if (imgScope.type !== 'global') topCard.appendChild(h('p',{style:'color:var(--dim);font-size:12px;margin-top:6px'},'⚠ 组别/群组仅可设置功能开关，API 密钥、URL 等始终使用全局配置'))
+  if (!isSA) topCard.appendChild(h('p',{style:'color:var(--dim);font-size:12px;margin-top:6px'},'仅超级管理员可修改图片处理设置（当前为只读模式）'))
   M.appendChild(topCard)
 
-  const data = await api('/api/image-rules/get', { groupId: imgScope })
+  const data = await api('/api/image-rules/get', { scope: imgScope.type, id: imgScope.id })
   if (!data) {
     M.appendChild(h('div',{cls:'card',innerHTML:'<div class="empty">⚠ 无法加载配置，请重启 group-manager 服务后刷新。</div>'}))
     return
@@ -832,6 +850,8 @@ async function renderImageConfig() {
   const r = data.rules || {}
 
   // ── helper: feature card ──
+  // fields: [key, label, placeholder, type, globalOnly?]
+  // globalOnly=true: field only shown/saved on global scope (API keys, URLs, model, prompt)
   function featureCard(title, enableKey, enableLabel, fields, extraNote) {
     const card = h('div',{cls:'card'})
     card.appendChild(h('h2',{},title))
@@ -842,21 +862,23 @@ async function renderImageConfig() {
     lbl.appendChild(enabled); lbl.appendChild(document.createTextNode(enableLabel)); card.appendChild(lbl)
 
     const fieldEls = {}
-    for(const [key, label, placeholder, type] of fields) {
+    for(const [key, label, placeholder, type, globalOnly] of fields) {
+      if(globalOnly && imgScope.type !== 'global') continue
       const row = h('div',{style:'display:grid;grid-template-columns:140px 1fr;align-items:center;gap:8px;margin-bottom:8px'})
       row.appendChild(h('label',{style:'font-size:12px;color:var(--dim)'},label))
       const inp = type==='checkbox'
         ? (() => { const c=h('input',{type:'checkbox'}); c.checked=!!r[key]; return c })()
-        : h('input',{type:type||'text',placeholder:placeholder||'',value:r[key]||'',style:'flex:1'})
-      if(type==='password') inp.type='password'
+        : h('input',{type:type||'text',placeholder:placeholder||'',value:r[key]??'',style:'flex:1'})
       row.appendChild(inp); card.appendChild(row); fieldEls[key]=inp
     }
 
     if(isSA){
       const btn=h('button',{cls:'primary',style:'margin-top:8px',onclick:async()=>{
-        const body={groupId:imgScope,[enableKey]:enabled.checked?1:0}
-        for(const [key,,,,noGlobal] of fields){
-          if(imgScope===0||!noGlobal) body[key]=fieldEls[key].type==='checkbox'?(fieldEls[key].checked?1:0):fieldEls[key].value
+        const body={ scope:imgScope.type, id:imgScope.id, [enableKey]:enabled.checked?1:0 }
+        for(const [key,,,,globalOnly] of fields){
+          if(globalOnly && imgScope.type !== 'global') continue
+          if(!fieldEls[key]) continue
+          body[key]=fieldEls[key].type==='checkbox'?(fieldEls[key].checked?1:0):fieldEls[key].value
         }
         await api('/api/image-rules/set',body); showOk(`已保存: ${title}`)
       }},'保存')
@@ -873,7 +895,7 @@ async function renderImageConfig() {
   // OCR
   M.appendChild(featureCard('OCR 文字识别', 'ocr_enabled', '启用 OCR 文字识别（本地 tesseract.js，无需外部 API）', [
     ['ocr_langs', '识别语言', 'chi_sim+eng / eng / chi_tra+eng / jpn+eng', 'text'],
-  ], '使用 tesseract.js 在本地识别图片文字并与关键词匹配。语言代码用 + 连接多种语言，首次使用该语言时会自动下载语言包。'))
+  ], '使用 tesseract.js 在本地识别图片文字并与关键词匹配。语言代码用 + 连接，首次使用新语言会自动下载语言包。'))
 
   // NSFW
   M.appendChild(featureCard('涩图检测 (NSFW)', 'nsfw_enabled', '启用涩图检测', [

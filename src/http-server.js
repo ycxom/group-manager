@@ -231,19 +231,38 @@ export class HttpServer {
 
     // ── Image rules ──
     if (url === '/api/image-rules/get') {
-      const gid = d.groupId != null ? +d.groupId : 0
-      if (gid !== 0 && !this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
-      return this._ok(res, { rules: db.getImageRules(gid) })
+      const scope = d.scope || 'global'
+      const id = d.id != null ? +d.id : 0
+      if (scope === 'category') {
+        if (!this._canAccessCategory(sess, id)) return this._err(res, 403, '无权访问该组别')
+        return this._ok(res, { rules: db.getCategoryImageRulesRaw(id) || {} })
+      }
+      if (scope === 'group') {
+        if (!this._canAccess(sess, id)) return this._err(res, 403, '无权访问该群')
+        return this._ok(res, { rules: db.getImageRulesRaw(id) || {} })
+      }
+      return this._ok(res, { rules: db.getImageRulesRaw(0) || {} })
     }
     if (url === '/api/image-rules/set') {
       if (sess.role !== 'superadmin') return this._err(res, 403, '仅超级管理员可修改图片处理设置')
-      const gid = d.groupId != null ? +d.groupId : 0
-      const allowed = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs',
-                       'nsfw_enabled','nsfw_url','nsfw_key','nsfw_threshold',
-                       'llm_enabled','llm_url','llm_key','llm_model','llm_prompt']
+      const scope = d.scope || 'global'
+      const id = d.id != null ? +d.id : 0
+      const globalCols = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs',
+                          'nsfw_enabled','nsfw_url','nsfw_key','nsfw_threshold',
+                          'llm_enabled','llm_url','llm_key','llm_model','llm_prompt']
+      const scopedCols = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs',
+                          'nsfw_enabled','nsfw_threshold','llm_enabled']
+      const allowed = scope === 'global' ? globalCols : scopedCols
       const fields = {}
       for (const k of allowed) if (k in d) fields[k] = d[k]
-      db.setImageRules(gid, fields)
+      if (scope === 'category') {
+        db.setCategoryImageRules(id, fields)
+      } else if (scope === 'group') {
+        if (db.isGroupInCategory(id)) return this._err(res, 400, '该群已加入组别，请在组别中配置')
+        db.setImageRules(id, fields)
+      } else {
+        db.setImageRules(0, fields)
+      }
       return this._ok(res, { ok: true })
     }
 

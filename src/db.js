@@ -103,6 +103,17 @@ CREATE TABLE IF NOT EXISTS image_rules (
   llm_prompt     TEXT    DEFAULT '',
   updated_at     TEXT    DEFAULT (datetime('now','localtime'))
 );
+CREATE TABLE IF NOT EXISTS category_image_rules (
+  category_id    INTEGER PRIMARY KEY,
+  qr_enabled     INTEGER,
+  qr_block_all   INTEGER,
+  ocr_enabled    INTEGER,
+  ocr_langs      TEXT,
+  nsfw_enabled   INTEGER,
+  nsfw_threshold REAL,
+  llm_enabled    INTEGER,
+  updated_at     TEXT    DEFAULT (datetime('now','localtime'))
+);
 `
 
 export async function createDatabase(filePath) {
@@ -542,12 +553,18 @@ class GM_Database {
 
   // ── Image rules ──────────────────────────────────────────────────────────
 
-  // Returns rules for a specific group, falling back to global (group_id=0).
+  // Returns merged rules for a group: global ← category (if group in category) ← per-group.
   // API keys (ocr_key, nsfw_key, llm_key, llm_url, etc.) always come from global row.
   getImageRules(groupId) {
     const global = this._get('SELECT * FROM image_rules WHERE group_id=0') || {}
     if (!groupId) return global
-    const row    = this._get('SELECT * FROM image_rules WHERE group_id=?', [groupId]) || {}
+    // Prefer category-level overrides for groups that belong to a category
+    const catRow = this._get(`
+      SELECT cir.* FROM category_image_rules cir
+      JOIN group_category gc ON gc.category_id = cir.category_id
+      WHERE gc.group_id = ? LIMIT 1
+    `, [groupId])
+    const row = catRow || this._get('SELECT * FROM image_rules WHERE group_id=?', [groupId]) || {}
     return {
       ...global,
       qr_enabled:     row.qr_enabled     ?? global.qr_enabled     ?? 0,
@@ -558,6 +575,18 @@ class GM_Database {
       nsfw_threshold: row.nsfw_threshold  ?? global.nsfw_threshold ?? 0.7,
       llm_enabled:    row.llm_enabled     ?? global.llm_enabled    ?? 0,
     }
+  }
+
+  getImageRulesRaw(groupId) {
+    return this._get('SELECT * FROM image_rules WHERE group_id=?', [groupId]) || null
+  }
+
+  getCategoryImageRulesRaw(categoryId) {
+    return this._get('SELECT * FROM category_image_rules WHERE category_id=?', [categoryId]) || null
+  }
+
+  isGroupInCategory(groupId) {
+    return !!this._get('SELECT 1 FROM group_category WHERE group_id=?', [groupId])
   }
 
   setImageRules(groupId, fields) {
@@ -571,6 +600,17 @@ class GM_Database {
       [groupId, ...COLS.map(c => merged[c] ?? null)]
     )
     this._save()
+  }
+
+  setCategoryImageRules(categoryId, fields) {
+    const COLS = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs',
+                  'nsfw_enabled','nsfw_threshold','llm_enabled']
+    const existing = this._get('SELECT * FROM category_image_rules WHERE category_id=?', [categoryId]) || {}
+    const merged = { ...existing, ...fields, category_id: categoryId }
+    this._run(
+      `INSERT OR REPLACE INTO category_image_rules (category_id,${COLS.join(',')},updated_at) VALUES (?,${COLS.map(()=>'?').join(',')},datetime('now','localtime'))`,
+      [categoryId, ...COLS.map(c => merged[c] ?? null)]
+    )
   }
 
   // ── Migration from legacy config ─────────────────────────────────────
