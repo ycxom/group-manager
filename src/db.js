@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS category_image_rules (
   qr_block_all   INTEGER,
   ocr_enabled    INTEGER,
   ocr_langs      TEXT,
+  ocr_url        TEXT,
   nsfw_enabled   INTEGER,
   nsfw_threshold REAL,
   llm_enabled    INTEGER,
@@ -165,6 +166,7 @@ export async function createDatabase(filePath) {
   // Migrations for columns added after initial release
   try { db.run("ALTER TABLE image_rules ADD COLUMN ocr_langs TEXT DEFAULT 'chi_sim+eng'") } catch {}
   try { db.run("ALTER TABLE image_rules ADD COLUMN ocr_url TEXT DEFAULT ''") } catch {}
+  try { db.run("ALTER TABLE category_image_rules ADD COLUMN ocr_url TEXT") } catch {}
   try { db.run("ALTER TABLE violations ADD COLUMN last_content TEXT DEFAULT ''") } catch {}
 
   const gm = new GM_Database(db, filePath)
@@ -692,6 +694,7 @@ class GM_Database {
       qr_block_all:   row.qr_block_all   ?? global.qr_block_all   ?? 0,
       ocr_enabled:    row.ocr_enabled     ?? global.ocr_enabled    ?? 0,
       ocr_langs:      row.ocr_langs       || global.ocr_langs      || 'chi_sim+eng',
+      ocr_url:        row.ocr_url         || global.ocr_url        || '',
       nsfw_enabled:   row.nsfw_enabled    ?? global.nsfw_enabled   ?? 0,
       nsfw_threshold: row.nsfw_threshold  ?? global.nsfw_threshold ?? 0.7,
       llm_enabled:    row.llm_enabled     ?? global.llm_enabled    ?? 0,
@@ -729,7 +732,7 @@ class GM_Database {
   }
 
   setCategoryImageRules(categoryId, fields) {
-    const COLS = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs',
+    const COLS = ['qr_enabled','qr_block_all','ocr_enabled','ocr_langs','ocr_url',
                   'nsfw_enabled','nsfw_threshold','llm_enabled']
     const existing = this._get('SELECT * FROM category_image_rules WHERE category_id=?', [categoryId]) || {}
     const merged = { ...existing, ...fields, category_id: categoryId }
