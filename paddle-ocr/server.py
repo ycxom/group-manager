@@ -1,4 +1,4 @@
-import os, base64, tempfile, math, httpx
+import os, base64, tempfile, httpx
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -6,22 +6,42 @@ from rapidocr_onnxruntime import RapidOCR
 
 app = FastAPI()
 
-MIN_CONF = float(os.getenv('OCR_MIN_CONF', '0.7'))
-MIN_LEN  = int(os.getenv('OCR_MIN_LEN', '2'))
+MIN_CONF = float(os.getenv('OCR_MIN_CONF', '0.6'))
+MIN_LEN  = int(os.getenv('OCR_MIN_LEN', '1'))
 
 def _is_garbage(text: str) -> bool:
+    """乱码检测：有意义字符（中日韩 / 字母 / 数字）占比过低 → 判为乱码。
+    不对中文做"字符重复"假设——中文短语本就每字不同。"""
     t = text.replace(' ', '')
     if len(t) < 4:
         return False
-    freq = {}
-    for c in t:
-        freq[c] = freq.get(c, 0) + 1
-    entropy = -sum((v / len(t)) * math.log2(v / len(t)) for v in freq.values())
-    max_entropy = math.log2(len(t))
-    return (entropy / max_entropy) > 0.85 if max_entropy > 0 else False
+    meaningful = sum(
+        1 for c in t
+        if c.isalnum() or '一' <= c <= '鿿'
+        or '぀' <= c <= 'ヿ'      # 日文假名
+        or '가' <= c <= '힣'      # 韩文
+    )
+    return (meaningful / len(t)) < 0.5
 
-print('[OCR] 初始化 RapidOCR...')
-_ocr = RapidOCR()
+USE_GPU = os.getenv('USE_GPU', '0') == '1'
+
+def _make_ocr():
+    """GPU 时尝试启用 CUDA EP；不同 rapidocr 版本签名不同，逐个降级尝试。"""
+    if USE_GPU:
+        for kw in (
+            {'params': {'Global.use_cuda': True}},                       # 1.3.x+
+            {'det_use_cuda': True, 'cls_use_cuda': True, 'rec_use_cuda': True},  # 旧版
+        ):
+            try:
+                print(f'[OCR] 尝试启用 GPU: {kw}')
+                return RapidOCR(**kw)
+            except TypeError:
+                continue
+        print('[OCR] 当前 rapidocr 版本不识别 GPU 参数，回退 CPU')
+    return RapidOCR()
+
+print(f'[OCR] 初始化 RapidOCR... (USE_GPU={USE_GPU})')
+_ocr = _make_ocr()
 print('[OCR] 准备就绪')
 
 class OcrReq(BaseModel):
