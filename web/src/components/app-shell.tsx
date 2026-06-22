@@ -82,7 +82,7 @@ function WallpaperBg({ url, blurred }: { url: string; blurred: boolean }) {
 
 // ── 壁纸设置面板（侧边栏底部）────────────────────────────────────────────────
 
-function WallpaperPanel() {
+function WallpaperPanel({ isSuperadmin }: { isSuperadmin: boolean }) {
   const { wallpaper, setWallpaper, clearWallpaper } = useWallpaper();
   const [open, setOpen] = React.useState(false);
   const [url, setUrl] = React.useState("");
@@ -141,37 +141,41 @@ function WallpaperPanel() {
             </div>
           )}
 
-          {/* URL 输入 */}
-          <input
-            type="url"
-            placeholder="粘贴图片链接…"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && applyUrl()}
-            className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          />
+          {isSuperadmin && (
+            <>
+              {/* URL 输入 */}
+              <input
+                type="url"
+                placeholder="粘贴图片链接…"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && applyUrl()}
+                className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
 
-          <div className="flex gap-2">
-            <button
-              onClick={applyUrl}
-              className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs hover:bg-accent"
-            >
-              应用链接
-            </button>
-            <button
-              onClick={() => fileRef.current?.click()}
-              className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs hover:bg-accent"
-            >
-              上传文件
-            </button>
-          </div>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleFile}
-          />
+              <div className="flex gap-2">
+                <button
+                  onClick={applyUrl}
+                  className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs hover:bg-accent"
+                >
+                  应用链接
+                </button>
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs hover:bg-accent"
+                >
+                  上传文件
+                </button>
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFile}
+              />
+            </>
+          )}
         </div>
       )}
     </div>
@@ -253,7 +257,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <WallpaperPanel />
+        <WallpaperPanel isSuperadmin={isSuperadmin} />
       </aside>
 
       {/* Main column */}

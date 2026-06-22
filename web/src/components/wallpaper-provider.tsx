@@ -2,8 +2,6 @@
 
 import * as React from "react";
 
-const KEY = "gm_wallpaper";
-
 interface WallpaperCtx {
   wallpaper: string;
   setWallpaper: (url: string) => void;
@@ -18,24 +16,38 @@ export function useWallpaper() {
   return v;
 }
 
+function applyClass(url: string) {
+  document.documentElement.classList.toggle("has-wallpaper", !!url);
+}
+
 export function WallpaperProvider({ children }: { children: React.ReactNode }) {
   const [wallpaper, setWallpaperState] = React.useState("");
 
   React.useEffect(() => {
-    const saved = localStorage.getItem(KEY) || "";
-    setWallpaperState(saved);
-    document.documentElement.classList.toggle("has-wallpaper", !!saved);
+    fetch("/api/settings/wallpaper")
+      .then((r) => r.json())
+      .then((data) => {
+        const url: string = data.data?.url || "";
+        setWallpaperState(url);
+        applyClass(url);
+      })
+      .catch(() => {});
   }, []);
 
   const setWallpaper = React.useCallback((url: string) => {
-    setWallpaperState(url);
-    if (url) {
-      localStorage.setItem(KEY, url);
-      document.documentElement.classList.add("has-wallpaper");
-    } else {
-      localStorage.removeItem(KEY);
-      document.documentElement.classList.remove("has-wallpaper");
-    }
+    fetch("/api/settings/wallpaper", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok) {
+          setWallpaperState(url);
+          applyClass(url);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const clearWallpaper = React.useCallback(() => setWallpaper(""), [setWallpaper]);

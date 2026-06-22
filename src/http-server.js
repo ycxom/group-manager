@@ -144,6 +144,11 @@ export class HttpServer {
       return
     }
 
+    // 公开设置读取（登录页可用，无需 session）
+    if (req.method === 'GET' && url === '/api/settings/wallpaper') {
+      return this._json(res, 200, { ok: true, data: { url: this.db.getSetting('wallpaper_url') || '' } })
+    }
+
     // 非 POST 请求 → 托管 Next.js 静态构建产物
     if (req.method !== 'POST') {
       return this._serveStatic(req, res)
@@ -514,6 +519,14 @@ export class HttpServer {
       if (sess.role !== 'superadmin') return this._err(res, 403, '仅超级管理员可分配群权限')
       if (!d.username || d.groupId == null) return this._err(res, 400, '缺少参数')
       return this._ok(res, { removed: db.removeUserGroup(d.username, +d.groupId) })
+    }
+
+    // ── Settings ──
+    if (url === '/api/settings/wallpaper') {
+      if (sess.role !== 'superadmin') return this._err(res, 403, '仅超级管理员可修改壁纸')
+      const wallpaperUrl = typeof d.url === 'string' ? d.url.trim() : ''
+      this.db.setSetting('wallpaper_url', wallpaperUrl || null)
+      return this._ok(res, { ok: true })
     }
 
     res.writeHead(404); res.end('Not Found')

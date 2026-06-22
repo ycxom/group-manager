@@ -125,6 +125,10 @@ CREATE TABLE IF NOT EXISTS category_qr_keywords (
   created_at  TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(category_id, keyword)
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);
 CREATE TABLE IF NOT EXISTS image_rules (
   group_id       INTEGER PRIMARY KEY,
   qr_enabled     INTEGER DEFAULT 0,
@@ -804,6 +808,21 @@ class GM_Database {
       `INSERT OR REPLACE INTO category_image_rules (category_id,${COLS.join(',')},updated_at) VALUES (?,${COLS.map(()=>'?').join(',')},datetime('now','localtime'))`,
       [categoryId, ...COLS.map(c => merged[c] ?? null)]
     )
+  }
+
+  // ── Global settings ──────────────────────────────────────────────────
+
+  getSetting(key) {
+    return this._get('SELECT value FROM settings WHERE key=?', [key])?.value ?? null
+  }
+
+  setSetting(key, value) {
+    if (value === null || value === undefined || value === '') {
+      this._db.run('DELETE FROM settings WHERE key=?', [key])
+    } else {
+      this._db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, String(value)])
+    }
+    this._save()
   }
 
   // ── Migration from legacy config ─────────────────────────────────────

@@ -34,7 +34,7 @@ function _connect() {
       .then((data) => { _ready = true; console.log('[GM桥接] 已连接并认证:', data.message) })
       .catch((e) => console.error('[GM桥接] 认证失败:', e.message))
   })
-  _ws.on('message', (raw) => {
+  _ws.on('message', async (raw) => {
     let msg
     try { msg = JSON.parse(raw.toString()) } catch { return }
     if (msg._id !== undefined) {
