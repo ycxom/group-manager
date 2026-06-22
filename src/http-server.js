@@ -1,10 +1,30 @@
 import { createServer } from 'http'
-import { readFileSync }  from 'fs'
+import { readFileSync, existsSync, statSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { scryptSync, randomBytes, timingSafeEqual } from 'crypto'
 import path from 'path'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+// Next.js 静态导出目录（npm run build 生成）
+const OUT_DIR = path.resolve(__dirname, '..', 'web', 'out')
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js':   'application/javascript; charset=utf-8',
+  '.mjs':  'application/javascript; charset=utf-8',
+  '.css':  'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.ico':  'image/x-icon',
+  '.png':  'image/png',
+  '.jpg':  'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.svg':  'image/svg+xml',
+  '.woff2':'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf':  'font/ttf',
+  '.txt':  'text/plain; charset=utf-8',
+}
 
 // ── Password helpers (scrypt, sync, no deps) ─────────────────────────────
 
@@ -75,12 +95,12 @@ export class HttpServer {
   }
 
   listen() {
-    const html = readFileSync(path.join(__dirname, 'ui', 'index.html'), 'utf8')
-    const srv  = createServer((req, res) => this._handle(req, res, html))
-    srv.on('error', (e) => console.error(`[UI] HTTP 服务启动失败: ${e.message}`))
-    srv.listen(this.uiPort, '::', () => {
+    this.server = createServer((req, res) => this._handle(req, res))
+    this.server.on('error', (e) => console.error(`[UI] HTTP 服务启动失败: ${e.message}`))
+    this.server.listen(this.uiPort, '::', () => {
       console.log(`[UI] 管理界面: http://localhost:${this.uiPort}  (all interfaces :: ${this.uiPort})`)
     })
+    return this.server
   }
 
   // ── SSE ─────────────────────────────────────────────────────────────────
@@ -100,15 +120,9 @@ export class HttpServer {
 
   // ── Router ───────────────────────────────────────────────────────────────
 
-  async _handle(req, res, html) {
+  async _handle(req, res) {
     const url  = req.url.split('?')[0]
     const sess = getSession(req.headers.cookie)
-
-    // Static HTML
-    if (req.method === 'GET' && url === '/') {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-      return res.end(html)
-    }
 
     // SSE events stream (GET, requires session)
     if (req.method === 'GET' && url === '/events') {
@@ -130,9 +144,9 @@ export class HttpServer {
       return
     }
 
-    // POST only from here
+    // 非 POST 请求 → 托管 Next.js 静态构建产物
     if (req.method !== 'POST') {
-      res.writeHead(405); return res.end('Method Not Allowed')
+      return this._serveStatic(req, res)
     }
 
     // Require JSON content-type (implicit CSRF guard)
@@ -503,6 +517,46 @@ export class HttpServer {
     }
 
     res.writeHead(404); res.end('Not Found')
+  }
+
+  // ── Next.js 静态文件服务 ─────────────────────────────────────────────────
+
+  _serveStatic(req, res) {
+    if (!existsSync(OUT_DIR)) {
+      res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' })
+      return res.end('<h1>前端尚未构建</h1><p>请在 <code>web/</code> 目录运行 <code>npm run build</code></p>')
+    }
+
+    let urlPath = req.url.split('?')[0]
+    // 去除多余 .. 防路径穿越
+    urlPath = urlPath.split('/').filter(s => s && s !== '..').join('/')
+    if (!urlPath || urlPath === '/') urlPath = ''
+
+    const base = path.join(OUT_DIR, urlPath)
+    const candidates = [
+      base,                             // /_next/static/…、favicon.ico 等直接文件
+      base + '.html',                   // /keywords → keywords.html
+      path.join(base, 'index.html'),    // /keywords/ → keywords/index.html
+      path.join(OUT_DIR, '404.html'),   // 自定义 404
+      path.join(OUT_DIR, 'index.html'), // SPA 兜底
+    ]
+
+    for (const filePath of candidates) {
+      if (!path.resolve(filePath).startsWith(OUT_DIR)) continue
+      try {
+        if (!statSync(filePath).isFile()) continue
+        const ext  = path.extname(filePath).toLowerCase()
+        const mime = MIME[ext] || 'application/octet-stream'
+        const cc   = filePath.includes(`${path.sep}_next${path.sep}static${path.sep}`)
+          ? 'public, max-age=31536000, immutable'
+          : 'no-cache'
+        res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': cc })
+        return res.end(readFileSync(filePath))
+      } catch { continue }
+    }
+
+    res.writeHead(404, { 'Content-Type': 'text/plain' })
+    res.end('Not Found')
   }
 
   // ── Login / Logout ───────────────────────────────────────────────────────

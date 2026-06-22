@@ -50,10 +50,16 @@ export class ManagementServer {
     recall.on((ev) => this._broadcast({ event: ev }))
   }
 
-  listen() {
-    this.wss = new WebSocketServer({ port: this.port, host: '::' })
-    this.wss.on('error', (e) => console.error(`[Mgmt] WS 启动失败: ${e.message}`))
-    console.log(`[Mgmt] 管理 WS 服务已启动，端口 ${this.port} (all interfaces)`)
+  listen(httpServer) {
+    // httpServer 存在时复用 HTTP 端口，path=/ws；否则独立监听 this.port
+    if (httpServer) {
+      this.wss = new WebSocketServer({ server: httpServer, path: '/ws' })
+      console.log(`[Mgmt] 管理 WS 已挂载到 HTTP 服务器（路径 /ws）`)
+    } else {
+      this.wss = new WebSocketServer({ port: this.port, host: '::' })
+      this.wss.on('error', (e) => console.error(`[Mgmt] WS 启动失败: ${e.message}`))
+      console.log(`[Mgmt] 管理 WS 服务已启动，端口 ${this.port} (all interfaces)`)
+    }
 
     this.wss.on('connection', (ws) => {
       ws.authed = false

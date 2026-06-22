@@ -16,10 +16,10 @@ export class OneBotAdapter {
     this._reconnectTimer = null
   }
 
-  start() {
+  start(httpServer) {
     const mode = this.cfg.mode || 'forward'
     if (mode === 'reverse') {
-      this._startReverseServer()
+      this._startReverseServer(httpServer)
     } else {
       this._connect()
     }
@@ -45,10 +45,16 @@ export class OneBotAdapter {
 
   // ──────── Reverse 模式 ────────
 
-  _startReverseServer() {
-    const port = this.cfg.reversePort || 8080
-    const wss = new WebSocketServer({ port })
-    console.log(`[OneBot] 反向 WS 服务端已启动，端口 ${port}，等待 bot 连接`)
+  _startReverseServer(httpServer) {
+    let wss
+    if (httpServer) {
+      wss = new WebSocketServer({ server: httpServer, path: '/bot' })
+      console.log(`[OneBot] 反向 WS 已挂载到 HTTP 服务器（路径 /bot）`)
+    } else {
+      const port = this.cfg.reversePort || 8080
+      wss = new WebSocketServer({ port })
+      console.log(`[OneBot] 反向 WS 服务端已启动，端口 ${port}，等待 bot 连接`)
+    }
 
     wss.on('connection', (ws, req) => {
       const token = (req.headers['authorization'] || '').replace('Bearer ', '')

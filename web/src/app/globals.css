@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/* GitHub-ish dark palette, mapped to shadcn token names */
+:root {
+  --radius: 0.5rem;
+  --background: #0d1117;
+  --foreground: #c9d1d9;
+  --card: #161b22;
+  --card-foreground: #c9d1d9;
+  --popover: #161b22;
+  --popover-foreground: #c9d1d9;
+  --primary: #58a6ff;
+  --primary-foreground: #0d1117;
+  --secondary: #21262d;
+  --secondary-foreground: #c9d1d9;
+  --muted: #21262d;
+  --muted-foreground: #8b949e;
+  --accent: #21262d;
+  --accent-foreground: #ffffff;
+  --destructive: #f85149;
+  --destructive-foreground: #ffffff;
+  --success: #3fb950;
+  --warning: #d29922;
+  --border: #30363d;
+  --input: #30363d;
+  --ring: #58a6ff;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* 壁纸模式：重写颜色变量为半透明，所有使用这些变量的元素自动变透明 */
+html.has-wallpaper {
+  --background: rgb(13 17 23 / 0.55);
+  --card:       rgb(22 27 34 / 0.60);
+  --popover:    rgb(22 27 34 / 0.60);
+  --secondary:  rgb(33 38 45 / 0.60);
+  --muted:      rgb(33 38 45 / 0.60);
+  --accent:     rgb(33 38 45 / 0.60);
+}
+
+html.has-wallpaper body {
+  background: transparent;
+}
+
+/* 结构性容器加 backdrop-filter 产生毛玻璃质感 */
+html.has-wallpaper aside,
+html.has-wallpaper header,
+html.has-wallpaper main {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* 卡片、面板等内部容器也加毛玻璃 */
+html.has-wallpaper .rounded-lg,
+html.has-wallpaper .rounded-md,
+html.has-wallpaper [role="dialog"],
+html.has-wallpaper [role="listbox"],
+html.has-wallpaper [role="menu"],
+/* 所有带边框的元素（侧边栏、面板、分组等） */
+html.has-wallpaper [class*="border-"] {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* flex 布局容器也加毛玻璃 */
+html.has-wallpaper .flex.flex-col,
+html.has-wallpaper .flex.flex-row {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}

@@ -43,19 +43,19 @@ if (db.userCount() === 0) {
   console.log('[Auth] 已创建默认账户 admin/admin，请登录后立即修改密码！')
 }
 
-// 管理 WS 服务端（Bot 适配器专用）
-const mgmt = new ManagementServer(config, db, recall, config.get('management.port', 8765))
-mgmt.listen()
-
-// Web UI（HTTP REST + SSE）
+// Web UI（HTTP REST + SSE）—— 启动并获取共享 HTTP 服务器
 const ui = new HttpServer(config, db, recall)
-ui.listen()
+const httpServer = ui.listen()
+
+// 管理 WS 服务端（Bot 适配器专用）—— 挂载到同一 HTTP 服务器，复用端口
+const mgmt = new ManagementServer(config, db, recall)
+mgmt.listen(httpServer)
 
 // Bot 适配器（url 为空则跳过）
 const botUrl = config.get('bot.url', '')
 if (botUrl) {
   const bot = new OneBotAdapter(config.get('bot'), recall)
-  bot.start()
+  bot.start(httpServer)  // reverse 模式同样复用 HTTP 端口（路径 /bot）
 } else {
   console.log('[Bot] bot.url 未配置，跳过 Bot 连接')
 }

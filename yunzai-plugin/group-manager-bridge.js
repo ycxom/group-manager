@@ -1,7 +1,7 @@
 import plugin from '../../lib/plugins/plugin.js'
 import { WebSocket } from 'ws'
 
-const GM_WS_URL = 'ws://127.0.0.1:8765'
+const GM_WS_URL = 'ws://127.0.0.1:8766/ws'
 const GM_TOKEN  = 'change-this-token'
 
 // Module-level state — survives Yunzai re-instantiating the class per message
