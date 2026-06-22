@@ -15,12 +15,15 @@ CREATE TABLE IF NOT EXISTS groups (
   created_at     TEXT DEFAULT (datetime('now','localtime'))
 );
 CREATE TABLE IF NOT EXISTS keywords (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  group_id    INTEGER DEFAULT 0,
-  keyword     TEXT NOT NULL,
-  recall_only INTEGER DEFAULT 0,
-  created_by  INTEGER,
-  created_at  TEXT DEFAULT (datetime('now','localtime')),
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id      INTEGER DEFAULT 0,
+  keyword       TEXT NOT NULL,
+  recall_only   INTEGER DEFAULT 0,
+  do_kick       INTEGER DEFAULT 0,
+  do_mute       INTEGER DEFAULT 0,
+  mute_duration INTEGER DEFAULT 600,
+  created_by    INTEGER,
+  created_at    TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(group_id, keyword)
 );
 CREATE TABLE IF NOT EXISTS admins (
@@ -69,12 +72,15 @@ CREATE TABLE IF NOT EXISTS group_category (
   PRIMARY KEY (group_id, category_id)
 );
 CREATE TABLE IF NOT EXISTS category_keywords (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  category_id INTEGER NOT NULL,
-  keyword     TEXT NOT NULL,
-  recall_only INTEGER DEFAULT 0,
-  created_by  TEXT,
-  created_at  TEXT DEFAULT (datetime('now','localtime')),
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_id   INTEGER NOT NULL,
+  keyword       TEXT NOT NULL,
+  recall_only   INTEGER DEFAULT 0,
+  do_kick       INTEGER DEFAULT 0,
+  do_mute       INTEGER DEFAULT 0,
+  mute_duration INTEGER DEFAULT 600,
+  created_by    TEXT,
+  created_at    TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(category_id, keyword)
 );
 CREATE TABLE IF NOT EXISTS user_categories (
@@ -90,40 +96,60 @@ CREATE TABLE IF NOT EXISTS category_exempt_users (
   UNIQUE(category_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS ocr_keywords (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  group_id    INTEGER DEFAULT 0,
-  keyword     TEXT NOT NULL,
-  recall_only INTEGER DEFAULT 0,
-  created_by  TEXT,
-  created_at  TEXT DEFAULT (datetime('now','localtime')),
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id      INTEGER DEFAULT 0,
+  keyword       TEXT NOT NULL,
+  recall_only   INTEGER DEFAULT 0,
+  do_kick       INTEGER DEFAULT 0,
+  do_mute       INTEGER DEFAULT 0,
+  mute_duration INTEGER DEFAULT 600,
+  created_by    TEXT,
+  created_at    TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(group_id, keyword)
 );
 CREATE TABLE IF NOT EXISTS category_ocr_keywords (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  category_id INTEGER NOT NULL,
-  keyword     TEXT NOT NULL,
-  recall_only INTEGER DEFAULT 0,
-  created_by  TEXT,
-  created_at  TEXT DEFAULT (datetime('now','localtime')),
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_id   INTEGER NOT NULL,
+  keyword       TEXT NOT NULL,
+  recall_only   INTEGER DEFAULT 0,
+  do_kick       INTEGER DEFAULT 0,
+  do_mute       INTEGER DEFAULT 0,
+  mute_duration INTEGER DEFAULT 600,
+  created_by    TEXT,
+  created_at    TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(category_id, keyword)
 );
 CREATE TABLE IF NOT EXISTS qr_keywords (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  group_id    INTEGER DEFAULT 0,
-  keyword     TEXT NOT NULL,
-  recall_only INTEGER DEFAULT 0,
-  created_by  TEXT,
-  created_at  TEXT DEFAULT (datetime('now','localtime')),
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id      INTEGER DEFAULT 0,
+  keyword       TEXT NOT NULL,
+  recall_only   INTEGER DEFAULT 0,
+  do_kick       INTEGER DEFAULT 0,
+  do_mute       INTEGER DEFAULT 0,
+  mute_duration INTEGER DEFAULT 600,
+  created_by    TEXT,
+  created_at    TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(group_id, keyword)
 );
 CREATE TABLE IF NOT EXISTS category_qr_keywords (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  category_id INTEGER NOT NULL,
-  keyword     TEXT NOT NULL,
-  recall_only INTEGER DEFAULT 0,
-  created_by  TEXT,
-  created_at  TEXT DEFAULT (datetime('now','localtime')),
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_id   INTEGER NOT NULL,
+  keyword       TEXT NOT NULL,
+  recall_only   INTEGER DEFAULT 0,
+  do_kick       INTEGER DEFAULT 0,
+  do_mute       INTEGER DEFAULT 0,
+  mute_duration INTEGER DEFAULT 600,
+  created_by    TEXT,
+  created_at    TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(category_id, keyword)
+);
+CREATE TABLE IF NOT EXISTS violation_logs (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      INTEGER NOT NULL,
+  group_id     INTEGER NOT NULL,
+  keyword      TEXT    DEFAULT '',
+  content      TEXT    DEFAULT '',
+  triggered_at TEXT    DEFAULT (datetime('now','localtime'))
 );
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
@@ -178,6 +204,7 @@ export async function createDatabase(filePath) {
   try { db.run("ALTER TABLE image_rules ADD COLUMN ocr_url TEXT DEFAULT ''") } catch {}
   try { db.run("ALTER TABLE category_image_rules ADD COLUMN ocr_url TEXT") } catch {}
   try { db.run("ALTER TABLE violations ADD COLUMN last_content TEXT DEFAULT ''") } catch {}
+  try { db.run("ALTER TABLE violations ADD COLUMN archived_at TEXT DEFAULT NULL") } catch {}
   // recall_only：命中后仅撤回，不计违规、不踢人
   try { db.run("ALTER TABLE keywords ADD COLUMN recall_only INTEGER DEFAULT 0") } catch {}
   try { db.run("ALTER TABLE category_keywords ADD COLUMN recall_only INTEGER DEFAULT 0") } catch {}
@@ -185,6 +212,13 @@ export async function createDatabase(filePath) {
   try { db.run("ALTER TABLE category_ocr_keywords ADD COLUMN recall_only INTEGER DEFAULT 0") } catch {}
   try { db.run("ALTER TABLE qr_keywords ADD COLUMN recall_only INTEGER DEFAULT 0") } catch {}
   try { db.run("ALTER TABLE category_qr_keywords ADD COLUMN recall_only INTEGER DEFAULT 0") } catch {}
+  // 关键词级处置方式：立即踢出 / 立即禁言 / 禁言时长
+  for (const tbl of ['keywords','category_keywords','ocr_keywords','category_ocr_keywords','qr_keywords','category_qr_keywords']) {
+    try { db.run(`ALTER TABLE ${tbl} ADD COLUMN do_kick       INTEGER DEFAULT 0`) } catch {}
+    try { db.run(`ALTER TABLE ${tbl} ADD COLUMN do_mute       INTEGER DEFAULT 0`) } catch {}
+    try { db.run(`ALTER TABLE ${tbl} ADD COLUMN mute_duration INTEGER DEFAULT 600`) } catch {}
+    try { db.run(`ALTER TABLE ${tbl} ADD COLUMN do_recall     INTEGER DEFAULT 1`) } catch {}
+  }
 
   const gm = new GM_Database(db, filePath)
   console.log('[DB] SQLite (sql.js) 初始化完成:', filePath)
@@ -252,11 +286,16 @@ class GM_Database {
     return this._get('SELECT * FROM groups WHERE group_id = ?', [groupId]) || null
   }
 
-  upsertGroup(groupId, { enabled = 1, max_violations = 3 } = {}) {
+  upsertGroup(groupId, fields = {}) {
+    const ex = this.getGroup(groupId) || {}
+    const v = {
+      enabled:        fields.enabled        ?? ex.enabled        ?? 1,
+      max_violations: fields.max_violations ?? ex.max_violations ?? 3,
+    }
     this._run(`
       INSERT INTO groups (group_id, enabled, max_violations) VALUES (?, ?, ?)
       ON CONFLICT(group_id) DO UPDATE SET enabled=excluded.enabled, max_violations=excluded.max_violations
-    `, [groupId, enabled ? 1 : 0, max_violations])
+    `, [groupId, v.enabled ? 1 : 0, v.max_violations])
   }
 
   removeGroup(groupId) {
@@ -275,17 +314,33 @@ class GM_Database {
   // ── Keywords ────────────────────────────────────────────────────────────
 
   /**
-   * 合并去重多来源关键词行，返回 [{ keyword, recall_only }]。
-   * 同一关键词在多个来源出现时，“计违规”（recall_only=0）优先于“仅撤回”，避免误降级执法力度。
+   * 合并去重多来源关键词行。
+   * recall_only：0（计违规）优先，避免降级执法力度。
+   * do_kick / do_mute：任一来源开启则开启（取 OR）。
+   * mute_duration：取两者中较大值。
    */
   _mergeKeywords(rows) {
     const map = new Map()
     for (const r of rows) {
-      const ro = r.recall_only ? 1 : 0
       if (map.has(r.keyword)) {
-        map.set(r.keyword, { keyword: r.keyword, recall_only: map.get(r.keyword).recall_only && ro ? 1 : 0 })
+        const cur = map.get(r.keyword)
+        map.set(r.keyword, {
+          keyword:       r.keyword,
+          do_recall:     (cur.do_recall || r.do_recall) ? 1 : 0,
+          recall_only:   cur.recall_only && r.recall_only ? 1 : 0,
+          do_kick:       (cur.do_kick || r.do_kick) ? 1 : 0,
+          do_mute:       (cur.do_mute || r.do_mute) ? 1 : 0,
+          mute_duration: Math.max(cur.mute_duration || 600, r.mute_duration || 600),
+        })
       } else {
-        map.set(r.keyword, { keyword: r.keyword, recall_only: ro })
+        map.set(r.keyword, {
+          keyword:       r.keyword,
+          do_recall:     r.do_recall !== undefined ? (r.do_recall ? 1 : 0) : 1,
+          recall_only:   r.recall_only ? 1 : 0,
+          do_kick:       r.do_kick ? 1 : 0,
+          do_mute:       r.do_mute ? 1 : 0,
+          mute_duration: r.mute_duration || 600,
+        })
       }
     }
     return [...map.values()].sort((a, b) => (a.keyword < b.keyword ? -1 : a.keyword > b.keyword ? 1 : 0))
@@ -293,11 +348,11 @@ class GM_Database {
 
   getEffectiveKeywords(groupId) {
     const fromKw = this._all(
-      'SELECT keyword, recall_only FROM keywords WHERE group_id = 0 OR group_id = ?',
+      'SELECT keyword, do_recall, recall_only, do_kick, do_mute, mute_duration FROM keywords WHERE group_id = 0 OR group_id = ?',
       [groupId]
     )
     const fromCat = this._all(`
-      SELECT ck.keyword, ck.recall_only FROM category_keywords ck
+      SELECT ck.keyword, ck.do_recall, ck.recall_only, ck.do_kick, ck.do_mute, ck.mute_duration FROM category_keywords ck
       JOIN group_category gc ON gc.category_id = ck.category_id
       WHERE gc.group_id = ?
     `, [groupId])
@@ -306,14 +361,18 @@ class GM_Database {
 
   listKeywords(groupId) {
     return this._all(
-      'SELECT id, group_id, keyword, recall_only, created_by, created_at FROM keywords WHERE group_id = ? ORDER BY created_at',
+      'SELECT id, group_id, keyword, do_recall, recall_only, do_kick, do_mute, mute_duration, created_by, created_at FROM keywords WHERE group_id = ? ORDER BY created_at',
       [groupId]
     )
   }
 
-  addKeyword(groupId, keyword, createdBy = null, recallOnly = 0) {
+  addKeyword(groupId, keyword, createdBy = null, opts = {}) {
+    const { doRecall = 1, recallOnly = 0, doKick = 0, doMute = 0, muteDuration = 600 } =
+      typeof opts === 'number' ? { recallOnly: opts } : opts
     try {
-      this._run('INSERT INTO keywords (group_id, keyword, recall_only, created_by) VALUES (?, ?, ?, ?)', [groupId, keyword, recallOnly ? 1 : 0, createdBy])
+      this._run(
+        'INSERT INTO keywords (group_id, keyword, do_recall, recall_only, do_kick, do_mute, mute_duration, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [groupId, keyword, doRecall ? 1 : 0, recallOnly ? 1 : 0, doKick ? 1 : 0, doMute ? 1 : 0, muteDuration, createdBy])
       return true
     } catch { return false }
   }
@@ -325,21 +384,34 @@ class GM_Database {
     return changed
   }
 
-  setKeywordRecallOnly(groupId, keyword, recallOnly) {
-    this._db.run('UPDATE keywords SET recall_only=? WHERE group_id=? AND keyword=?', [recallOnly ? 1 : 0, groupId, keyword])
+  /** 通用：更新关键词处置选项（recallOnly / doKick / doMute / muteDuration 均可选传） */
+  updateKeyword(groupId, keyword, opts = {}) {
+    const sets = []
+    const vals = []
+    if (opts.doRecall    !== undefined) { sets.push('do_recall=?');     vals.push(opts.doRecall    ? 1 : 0) }
+    if (opts.recallOnly  !== undefined) { sets.push('recall_only=?');   vals.push(opts.recallOnly  ? 1 : 0) }
+    if (opts.doKick      !== undefined) { sets.push('do_kick=?');       vals.push(opts.doKick      ? 1 : 0) }
+    if (opts.doMute      !== undefined) { sets.push('do_mute=?');       vals.push(opts.doMute      ? 1 : 0) }
+    if (opts.muteDuration!== undefined) { sets.push('mute_duration=?'); vals.push(Number(opts.muteDuration)) }
+    if (!sets.length) return false
+    this._db.run(`UPDATE keywords SET ${sets.join(',')} WHERE group_id=? AND keyword=?`, [...vals, groupId, keyword])
     const changed = this._db.getRowsModified() > 0
     this._save()
     return changed
+  }
+
+  setKeywordRecallOnly(groupId, keyword, recallOnly) {
+    return this.updateKeyword(groupId, keyword, { recallOnly })
   }
 
   // ── OCR Keywords ────────────────────────────────────────────────────────
 
   getEffectiveOCRKeywords(groupId) {
     const fromKw = this._all(
-      'SELECT keyword, recall_only FROM ocr_keywords WHERE group_id = 0 OR group_id = ?', [groupId]
+      'SELECT keyword, do_recall, recall_only, do_kick, do_mute, mute_duration FROM ocr_keywords WHERE group_id = 0 OR group_id = ?', [groupId]
     )
     const fromCat = this._all(`
-      SELECT ck.keyword, ck.recall_only FROM category_ocr_keywords ck
+      SELECT ck.keyword, ck.do_recall, ck.recall_only, ck.do_kick, ck.do_mute, ck.mute_duration FROM category_ocr_keywords ck
       JOIN group_category gc ON gc.category_id = ck.category_id
       WHERE gc.group_id = ?
     `, [groupId])
@@ -350,8 +422,10 @@ class GM_Database {
     return this._all('SELECT * FROM ocr_keywords WHERE group_id=? ORDER BY created_at', [groupId])
   }
 
-  addOCRKeyword(groupId, keyword, createdBy = null, recallOnly = 0) {
-    try { this._run('INSERT INTO ocr_keywords (group_id, keyword, recall_only, created_by) VALUES (?,?,?,?)', [groupId, keyword, recallOnly ? 1 : 0, createdBy]); return true }
+  addOCRKeyword(groupId, keyword, createdBy = null, opts = {}) {
+    const { doRecall = 1, recallOnly = 0, doKick = 0, doMute = 0, muteDuration = 600 } =
+      typeof opts === 'number' ? { recallOnly: opts } : opts
+    try { this._run('INSERT INTO ocr_keywords (group_id, keyword, do_recall, recall_only, do_kick, do_mute, mute_duration, created_by) VALUES (?,?,?,?,?,?,?,?)', [groupId, keyword, doRecall ? 1 : 0, recallOnly ? 1 : 0, doKick ? 1 : 0, doMute ? 1 : 0, muteDuration, createdBy]); return true }
     catch { return false }
   }
 
@@ -360,17 +434,28 @@ class GM_Database {
     const changed = this._db.getRowsModified() > 0; this._save(); return changed
   }
 
-  setOCRKeywordRecallOnly(groupId, keyword, recallOnly) {
-    this._db.run('UPDATE ocr_keywords SET recall_only=? WHERE group_id=? AND keyword=?', [recallOnly ? 1 : 0, groupId, keyword])
+  updateOCRKeyword(groupId, keyword, opts = {}) {
+    const sets = []; const vals = []
+    if (opts.doRecall    !== undefined) { sets.push('do_recall=?');     vals.push(opts.doRecall    ? 1 : 0) }
+    if (opts.recallOnly  !== undefined) { sets.push('recall_only=?');   vals.push(opts.recallOnly  ? 1 : 0) }
+    if (opts.doKick      !== undefined) { sets.push('do_kick=?');       vals.push(opts.doKick      ? 1 : 0) }
+    if (opts.doMute      !== undefined) { sets.push('do_mute=?');       vals.push(opts.doMute      ? 1 : 0) }
+    if (opts.muteDuration!== undefined) { sets.push('mute_duration=?'); vals.push(Number(opts.muteDuration)) }
+    if (!sets.length) return false
+    this._db.run(`UPDATE ocr_keywords SET ${sets.join(',')} WHERE group_id=? AND keyword=?`, [...vals, groupId, keyword])
     const changed = this._db.getRowsModified() > 0; this._save(); return changed
   }
+
+  setOCRKeywordRecallOnly(groupId, keyword, recallOnly) { return this.updateOCRKeyword(groupId, keyword, { recallOnly }) }
 
   listCategoryOCRKeywords(categoryId) {
     return this._all('SELECT * FROM category_ocr_keywords WHERE category_id=? ORDER BY created_at', [categoryId])
   }
 
-  addCategoryOCRKeyword(categoryId, keyword, createdBy = null, recallOnly = 0) {
-    try { this._run('INSERT INTO category_ocr_keywords (category_id, keyword, recall_only, created_by) VALUES (?,?,?,?)', [categoryId, keyword, recallOnly ? 1 : 0, createdBy]); return true }
+  addCategoryOCRKeyword(categoryId, keyword, createdBy = null, opts = {}) {
+    const { doRecall = 1, recallOnly = 0, doKick = 0, doMute = 0, muteDuration = 600 } =
+      typeof opts === 'number' ? { recallOnly: opts } : opts
+    try { this._run('INSERT INTO category_ocr_keywords (category_id, keyword, do_recall, recall_only, do_kick, do_mute, mute_duration, created_by) VALUES (?,?,?,?,?,?,?,?)', [categoryId, keyword, doRecall ? 1 : 0, recallOnly ? 1 : 0, doKick ? 1 : 0, doMute ? 1 : 0, muteDuration, createdBy]); return true }
     catch { return false }
   }
 
@@ -380,7 +465,20 @@ class GM_Database {
   }
 
   setCategoryOCRKeywordRecallOnly(categoryId, keyword, recallOnly) {
-    this._db.run('UPDATE category_ocr_keywords SET recall_only=? WHERE category_id=? AND keyword=?', [recallOnly ? 1 : 0, categoryId, keyword])
+    const sets = ['recall_only=?']
+    this._db.run(`UPDATE category_ocr_keywords SET ${sets.join(',')} WHERE category_id=? AND keyword=?`, [recallOnly ? 1 : 0, categoryId, keyword])
+    const changed = this._db.getRowsModified() > 0; this._save(); return changed
+  }
+
+  updateCategoryOCRKeyword(categoryId, keyword, opts = {}) {
+    const sets = []; const vals = []
+    if (opts.doRecall    !== undefined) { sets.push('do_recall=?');     vals.push(opts.doRecall    ? 1 : 0) }
+    if (opts.recallOnly  !== undefined) { sets.push('recall_only=?');   vals.push(opts.recallOnly  ? 1 : 0) }
+    if (opts.doKick      !== undefined) { sets.push('do_kick=?');       vals.push(opts.doKick      ? 1 : 0) }
+    if (opts.doMute      !== undefined) { sets.push('do_mute=?');       vals.push(opts.doMute      ? 1 : 0) }
+    if (opts.muteDuration!== undefined) { sets.push('mute_duration=?'); vals.push(Number(opts.muteDuration)) }
+    if (!sets.length) return false
+    this._db.run(`UPDATE category_ocr_keywords SET ${sets.join(',')} WHERE category_id=? AND keyword=?`, [...vals, categoryId, keyword])
     const changed = this._db.getRowsModified() > 0; this._save(); return changed
   }
 
@@ -388,10 +486,10 @@ class GM_Database {
 
   getEffectiveQRKeywords(groupId) {
     const fromKw = this._all(
-      'SELECT keyword, recall_only FROM qr_keywords WHERE group_id = 0 OR group_id = ?', [groupId]
+      'SELECT keyword, do_recall, recall_only, do_kick, do_mute, mute_duration FROM qr_keywords WHERE group_id = 0 OR group_id = ?', [groupId]
     )
     const fromCat = this._all(`
-      SELECT ck.keyword, ck.recall_only FROM category_qr_keywords ck
+      SELECT ck.keyword, ck.do_recall, ck.recall_only, ck.do_kick, ck.do_mute, ck.mute_duration FROM category_qr_keywords ck
       JOIN group_category gc ON gc.category_id = ck.category_id
       WHERE gc.group_id = ?
     `, [groupId])
@@ -402,8 +500,10 @@ class GM_Database {
     return this._all('SELECT * FROM qr_keywords WHERE group_id=? ORDER BY created_at', [groupId])
   }
 
-  addQRKeyword(groupId, keyword, createdBy = null, recallOnly = 0) {
-    try { this._run('INSERT INTO qr_keywords (group_id, keyword, recall_only, created_by) VALUES (?,?,?,?)', [groupId, keyword, recallOnly ? 1 : 0, createdBy]); return true }
+  addQRKeyword(groupId, keyword, createdBy = null, opts = {}) {
+    const { doRecall = 1, recallOnly = 0, doKick = 0, doMute = 0, muteDuration = 600 } =
+      typeof opts === 'number' ? { recallOnly: opts } : opts
+    try { this._run('INSERT INTO qr_keywords (group_id, keyword, do_recall, recall_only, do_kick, do_mute, mute_duration, created_by) VALUES (?,?,?,?,?,?,?,?)', [groupId, keyword, doRecall ? 1 : 0, recallOnly ? 1 : 0, doKick ? 1 : 0, doMute ? 1 : 0, muteDuration, createdBy]); return true }
     catch { return false }
   }
 
@@ -412,17 +512,28 @@ class GM_Database {
     const changed = this._db.getRowsModified() > 0; this._save(); return changed
   }
 
-  setQRKeywordRecallOnly(groupId, keyword, recallOnly) {
-    this._db.run('UPDATE qr_keywords SET recall_only=? WHERE group_id=? AND keyword=?', [recallOnly ? 1 : 0, groupId, keyword])
+  updateQRKeyword(groupId, keyword, opts = {}) {
+    const sets = []; const vals = []
+    if (opts.doRecall    !== undefined) { sets.push('do_recall=?');     vals.push(opts.doRecall    ? 1 : 0) }
+    if (opts.recallOnly  !== undefined) { sets.push('recall_only=?');   vals.push(opts.recallOnly  ? 1 : 0) }
+    if (opts.doKick      !== undefined) { sets.push('do_kick=?');       vals.push(opts.doKick      ? 1 : 0) }
+    if (opts.doMute      !== undefined) { sets.push('do_mute=?');       vals.push(opts.doMute      ? 1 : 0) }
+    if (opts.muteDuration!== undefined) { sets.push('mute_duration=?'); vals.push(Number(opts.muteDuration)) }
+    if (!sets.length) return false
+    this._db.run(`UPDATE qr_keywords SET ${sets.join(',')} WHERE group_id=? AND keyword=?`, [...vals, groupId, keyword])
     const changed = this._db.getRowsModified() > 0; this._save(); return changed
   }
+
+  setQRKeywordRecallOnly(groupId, keyword, recallOnly) { return this.updateQRKeyword(groupId, keyword, { recallOnly }) }
 
   listCategoryQRKeywords(categoryId) {
     return this._all('SELECT * FROM category_qr_keywords WHERE category_id=? ORDER BY created_at', [categoryId])
   }
 
-  addCategoryQRKeyword(categoryId, keyword, createdBy = null, recallOnly = 0) {
-    try { this._run('INSERT INTO category_qr_keywords (category_id, keyword, recall_only, created_by) VALUES (?,?,?,?)', [categoryId, keyword, recallOnly ? 1 : 0, createdBy]); return true }
+  addCategoryQRKeyword(categoryId, keyword, createdBy = null, opts = {}) {
+    const { doRecall = 1, recallOnly = 0, doKick = 0, doMute = 0, muteDuration = 600 } =
+      typeof opts === 'number' ? { recallOnly: opts } : opts
+    try { this._run('INSERT INTO category_qr_keywords (category_id, keyword, do_recall, recall_only, do_kick, do_mute, mute_duration, created_by) VALUES (?,?,?,?,?,?,?,?)', [categoryId, keyword, doRecall ? 1 : 0, recallOnly ? 1 : 0, doKick ? 1 : 0, doMute ? 1 : 0, muteDuration, createdBy]); return true }
     catch { return false }
   }
 
@@ -431,10 +542,19 @@ class GM_Database {
     const changed = this._db.getRowsModified() > 0; this._save(); return changed
   }
 
-  setCategoryQRKeywordRecallOnly(categoryId, keyword, recallOnly) {
-    this._db.run('UPDATE category_qr_keywords SET recall_only=? WHERE category_id=? AND keyword=?', [recallOnly ? 1 : 0, categoryId, keyword])
+  updateCategoryQRKeyword(categoryId, keyword, opts = {}) {
+    const sets = []; const vals = []
+    if (opts.doRecall    !== undefined) { sets.push('do_recall=?');     vals.push(opts.doRecall    ? 1 : 0) }
+    if (opts.recallOnly  !== undefined) { sets.push('recall_only=?');   vals.push(opts.recallOnly  ? 1 : 0) }
+    if (opts.doKick      !== undefined) { sets.push('do_kick=?');       vals.push(opts.doKick      ? 1 : 0) }
+    if (opts.doMute      !== undefined) { sets.push('do_mute=?');       vals.push(opts.doMute      ? 1 : 0) }
+    if (opts.muteDuration!== undefined) { sets.push('mute_duration=?'); vals.push(Number(opts.muteDuration)) }
+    if (!sets.length) return false
+    this._db.run(`UPDATE category_qr_keywords SET ${sets.join(',')} WHERE category_id=? AND keyword=?`, [...vals, categoryId, keyword])
     const changed = this._db.getRowsModified() > 0; this._save(); return changed
   }
+
+  setCategoryQRKeywordRecallOnly(categoryId, keyword, recallOnly) { return this.updateCategoryQRKeyword(categoryId, keyword, { recallOnly }) }
 
   // ── Admins ──────────────────────────────────────────────────────────────
 
@@ -528,15 +648,30 @@ class GM_Database {
     return this._get('SELECT count FROM violations WHERE user_id=? AND group_id=?', [userId, groupId])?.count || 0
   }
 
-  incrementViolation(userId, groupId, content = '') {
-    this._run(`
+  incrementViolation(userId, groupId, content = '', keyword = '') {
+    this._db.run(`
       INSERT INTO violations (user_id, group_id, count, last_content) VALUES (?, ?, 1, ?)
       ON CONFLICT(user_id, group_id) DO UPDATE SET
         count=count+1, last_at=datetime('now','localtime'), last_content=excluded.last_content
     `, [userId, groupId, content])
+    this._db.run(
+      'INSERT INTO violation_logs (user_id, group_id, keyword, content) VALUES (?, ?, ?, ?)',
+      [userId, groupId, keyword || '', content || '']
+    )
+    this._save()
     return this.getViolation(userId, groupId)
   }
 
+  /** 归档违规（被踢出时调用）：保留记录，重置当前计数，标记归档时间 */
+  archiveViolation(userId, groupId) {
+    this._db.run(
+      `UPDATE violations SET count=0, archived_at=datetime('now','localtime') WHERE user_id=? AND group_id=?`,
+      [userId, groupId]
+    )
+    this._save()
+  }
+
+  /** 管理员手动清除：重置计数但不标记归档，violation_logs 永久保留 */
   clearViolation(userId, groupId = null) {
     if (groupId !== null) {
       this._db.run('DELETE FROM violations WHERE user_id=? AND group_id=?', [userId, groupId])
@@ -544,6 +679,41 @@ class GM_Database {
       this._db.run('DELETE FROM violations WHERE user_id=?', [userId])
     }
     this._save()
+  }
+
+  /** 查询用户在指定群的每次触发详情 */
+  listViolationLogs(userId, groupId = null) {
+    if (groupId !== null) {
+      return this._all(
+        'SELECT * FROM violation_logs WHERE user_id=? AND group_id=? ORDER BY triggered_at',
+        [userId, groupId]
+      )
+    }
+    return this._all('SELECT * FROM violation_logs WHERE user_id=? ORDER BY triggered_at', [userId])
+  }
+
+  /**
+   * 查询用户在 joinedGroupId 及其同组群的全部历史违规。
+   * 用于成员重新入群时生成提醒摘要。
+   */
+  getRelevantViolationHistory(userId, joinedGroupId) {
+    const catIds = this.getGroupCategoryIds(joinedGroupId)
+    const relatedGroupIds = new Set([joinedGroupId])
+    for (const catId of catIds) {
+      for (const g of this.getCategoryGroups(catId)) relatedGroupIds.add(g.group_id)
+    }
+    const ids = [...relatedGroupIds]
+    const ph = ids.map(() => '?').join(',')
+    const logs = this._all(
+      `SELECT * FROM violation_logs WHERE user_id=? AND group_id IN (${ph}) ORDER BY triggered_at`,
+      [userId, ...ids]
+    )
+    const groups = this._all(
+      `SELECT user_id, group_id, count, last_content, last_at, archived_at FROM violations
+       WHERE user_id=? AND group_id IN (${ph})`,
+      [userId, ...ids]
+    )
+    return { total: logs.length, groups, logs }
   }
 
   // ── Users ───────────────────────────────────────────────────────────────
@@ -670,9 +840,16 @@ class GM_Database {
     )
   }
 
-  addCategoryKeyword(categoryId, keyword, createdBy = null, recallOnly = 0) {
-    try { this._run('INSERT INTO category_keywords (category_id, keyword, recall_only, created_by) VALUES (?, ?, ?, ?)', [categoryId, keyword, recallOnly ? 1 : 0, createdBy]); return true }
-    catch { return false }
+  addCategoryKeyword(categoryId, keyword, createdBy = null, opts = {}) {
+    const { doRecall = 1, recallOnly = 0, doKick = 0, doMute = 0, muteDuration = 600 } =
+      typeof opts === 'number' ? { recallOnly: opts } : opts
+    try {
+      this._run(
+        'INSERT INTO category_keywords (category_id, keyword, do_recall, recall_only, do_kick, do_mute, mute_duration, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [categoryId, keyword, doRecall ? 1 : 0, recallOnly ? 1 : 0, doKick ? 1 : 0, doMute ? 1 : 0, Number(muteDuration), createdBy]
+      )
+      return true
+    } catch { return false }
   }
 
   removeCategoryKeyword(categoryId, keyword) {
@@ -682,12 +859,19 @@ class GM_Database {
     return changed
   }
 
-  setCategoryKeywordRecallOnly(categoryId, keyword, recallOnly) {
-    this._db.run('UPDATE category_keywords SET recall_only=? WHERE category_id=? AND keyword=?', [recallOnly ? 1 : 0, categoryId, keyword])
-    const changed = this._db.getRowsModified() > 0
-    this._save()
-    return changed
+  updateCategoryKeyword(categoryId, keyword, opts = {}) {
+    const sets = []; const vals = []
+    if (opts.doRecall    !== undefined) { sets.push('do_recall=?');     vals.push(opts.doRecall    ? 1 : 0) }
+    if (opts.recallOnly  !== undefined) { sets.push('recall_only=?');   vals.push(opts.recallOnly  ? 1 : 0) }
+    if (opts.doKick      !== undefined) { sets.push('do_kick=?');       vals.push(opts.doKick      ? 1 : 0) }
+    if (opts.doMute      !== undefined) { sets.push('do_mute=?');       vals.push(opts.doMute      ? 1 : 0) }
+    if (opts.muteDuration!== undefined) { sets.push('mute_duration=?'); vals.push(Number(opts.muteDuration)) }
+    if (!sets.length) return false
+    this._db.run(`UPDATE category_keywords SET ${sets.join(',')} WHERE category_id=? AND keyword=?`, [...vals, categoryId, keyword])
+    const changed = this._db.getRowsModified() > 0; this._save(); return changed
   }
+
+  setCategoryKeywordRecallOnly(categoryId, keyword, recallOnly) { return this.updateCategoryKeyword(categoryId, keyword, { recallOnly }) }
 
   // ── User → Category authorization ────────────────────────────────────────
 

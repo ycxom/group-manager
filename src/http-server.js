@@ -216,7 +216,7 @@ export class HttpServer {
       const gid = d.groupId ?? 0
       if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
       if (gid > 0 && db.isGroupInCategory(gid)) return this._err(res, 400, '该群已加入组别，请在组别中配置关键词')
-      return this._ok(res, { added: db.addKeyword(gid, String(d.keyword), sess.username, d.recallOnly ? 1 : 0) })
+      return this._ok(res, { added: db.addKeyword(gid, String(d.keyword), sess.username, { doRecall: d.doRecall !== undefined ? (d.doRecall ? 1 : 0) : 1, recallOnly: d.recallOnly ? 1 : 0, doKick: d.doKick ? 1 : 0, doMute: d.doMute ? 1 : 0, muteDuration: d.muteDuration ?? 600 }) })
     }
     if (url === '/api/keyword/remove') {
       const gid = d.groupId ?? 0
@@ -226,7 +226,13 @@ export class HttpServer {
     if (url === '/api/keyword/update') {
       const gid = d.groupId ?? 0
       if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
-      return this._ok(res, { updated: db.setKeywordRecallOnly(gid, String(d.keyword), d.recallOnly ? 1 : 0) })
+      const _kopts = {}
+      if (d.doRecall     !== undefined) _kopts.doRecall     = d.doRecall     ? 1 : 0
+      if (d.recallOnly   !== undefined) _kopts.recallOnly   = d.recallOnly   ? 1 : 0
+      if (d.doKick       !== undefined) _kopts.doKick       = d.doKick       ? 1 : 0
+      if (d.doMute       !== undefined) _kopts.doMute       = d.doMute       ? 1 : 0
+      if (d.muteDuration !== undefined) _kopts.muteDuration = +d.muteDuration
+      return this._ok(res, { updated: db.updateKeyword(gid, String(d.keyword), _kopts) })
     }
 
     // ── OCR Keywords ──
@@ -239,7 +245,7 @@ export class HttpServer {
       const gid = d.groupId ?? 0
       if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
       if (gid > 0 && db.isGroupInCategory(gid)) return this._err(res, 400, '该群已加入组别，请在组别中配置关键词')
-      return this._ok(res, { added: db.addOCRKeyword(gid, String(d.keyword), sess.username, d.recallOnly ? 1 : 0) })
+      return this._ok(res, { added: db.addOCRKeyword(gid, String(d.keyword), sess.username, { doRecall: d.doRecall !== undefined ? (d.doRecall ? 1 : 0) : 1, recallOnly: d.recallOnly ? 1 : 0, doKick: d.doKick ? 1 : 0, doMute: d.doMute ? 1 : 0, muteDuration: d.muteDuration ?? 600 }) })
     }
     if (url === '/api/ocr-keyword/remove') {
       const gid = d.groupId ?? 0
@@ -249,7 +255,13 @@ export class HttpServer {
     if (url === '/api/ocr-keyword/update') {
       const gid = d.groupId ?? 0
       if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
-      return this._ok(res, { updated: db.setOCRKeywordRecallOnly(gid, String(d.keyword), d.recallOnly ? 1 : 0) })
+      const _oopts = {}
+      if (d.doRecall     !== undefined) _oopts.doRecall     = d.doRecall     ? 1 : 0
+      if (d.recallOnly   !== undefined) _oopts.recallOnly   = d.recallOnly   ? 1 : 0
+      if (d.doKick       !== undefined) _oopts.doKick       = d.doKick       ? 1 : 0
+      if (d.doMute       !== undefined) _oopts.doMute       = d.doMute       ? 1 : 0
+      if (d.muteDuration !== undefined) _oopts.muteDuration = +d.muteDuration
+      return this._ok(res, { updated: db.updateOCRKeyword(gid, String(d.keyword), _oopts) })
     }
     if (url === '/api/category/ocr-keyword/list') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
@@ -257,7 +269,7 @@ export class HttpServer {
     }
     if (url === '/api/category/ocr-keyword/add') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
-      return this._ok(res, { added: db.addCategoryOCRKeyword(+d.categoryId, String(d.keyword), sess.username, d.recallOnly ? 1 : 0) })
+      return this._ok(res, { added: db.addCategoryOCRKeyword(+d.categoryId, String(d.keyword), sess.username, { doRecall: d.doRecall !== undefined ? (d.doRecall ? 1 : 0) : 1, recallOnly: d.recallOnly ? 1 : 0, doKick: d.doKick ? 1 : 0, doMute: d.doMute ? 1 : 0, muteDuration: d.muteDuration ?? 600 }) })
     }
     if (url === '/api/category/ocr-keyword/remove') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
@@ -265,7 +277,13 @@ export class HttpServer {
     }
     if (url === '/api/category/ocr-keyword/update') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
-      return this._ok(res, { updated: db.setCategoryOCRKeywordRecallOnly(+d.categoryId, String(d.keyword), d.recallOnly ? 1 : 0) })
+      const _coopts = {}
+      if (d.doRecall     !== undefined) _coopts.doRecall     = d.doRecall     ? 1 : 0
+      if (d.recallOnly   !== undefined) _coopts.recallOnly   = d.recallOnly   ? 1 : 0
+      if (d.doKick       !== undefined) _coopts.doKick       = d.doKick       ? 1 : 0
+      if (d.doMute       !== undefined) _coopts.doMute       = d.doMute       ? 1 : 0
+      if (d.muteDuration !== undefined) _coopts.muteDuration = +d.muteDuration
+      return this._ok(res, { updated: db.updateCategoryOCRKeyword(+d.categoryId, String(d.keyword), _coopts) })
     }
 
     // ── QR Keywords ──
@@ -278,7 +296,7 @@ export class HttpServer {
       const gid = d.groupId ?? 0
       if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
       if (gid > 0 && db.isGroupInCategory(gid)) return this._err(res, 400, '该群已加入组别，请在组别中配置关键词')
-      return this._ok(res, { added: db.addQRKeyword(gid, String(d.keyword), sess.username, d.recallOnly ? 1 : 0) })
+      return this._ok(res, { added: db.addQRKeyword(gid, String(d.keyword), sess.username, { doRecall: d.doRecall !== undefined ? (d.doRecall ? 1 : 0) : 1, recallOnly: d.recallOnly ? 1 : 0, doKick: d.doKick ? 1 : 0, doMute: d.doMute ? 1 : 0, muteDuration: d.muteDuration ?? 600 }) })
     }
     if (url === '/api/qr-keyword/remove') {
       const gid = d.groupId ?? 0
@@ -288,7 +306,13 @@ export class HttpServer {
     if (url === '/api/qr-keyword/update') {
       const gid = d.groupId ?? 0
       if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
-      return this._ok(res, { updated: db.setQRKeywordRecallOnly(gid, String(d.keyword), d.recallOnly ? 1 : 0) })
+      const _qopts = {}
+      if (d.doRecall     !== undefined) _qopts.doRecall     = d.doRecall     ? 1 : 0
+      if (d.recallOnly   !== undefined) _qopts.recallOnly   = d.recallOnly   ? 1 : 0
+      if (d.doKick       !== undefined) _qopts.doKick       = d.doKick       ? 1 : 0
+      if (d.doMute       !== undefined) _qopts.doMute       = d.doMute       ? 1 : 0
+      if (d.muteDuration !== undefined) _qopts.muteDuration = +d.muteDuration
+      return this._ok(res, { updated: db.updateQRKeyword(gid, String(d.keyword), _qopts) })
     }
     if (url === '/api/category/qr-keyword/list') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
@@ -296,7 +320,7 @@ export class HttpServer {
     }
     if (url === '/api/category/qr-keyword/add') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
-      return this._ok(res, { added: db.addCategoryQRKeyword(+d.categoryId, String(d.keyword), sess.username, d.recallOnly ? 1 : 0) })
+      return this._ok(res, { added: db.addCategoryQRKeyword(+d.categoryId, String(d.keyword), sess.username, { doRecall: d.doRecall !== undefined ? (d.doRecall ? 1 : 0) : 1, recallOnly: d.recallOnly ? 1 : 0, doKick: d.doKick ? 1 : 0, doMute: d.doMute ? 1 : 0, muteDuration: d.muteDuration ?? 600 }) })
     }
     if (url === '/api/category/qr-keyword/remove') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
@@ -304,7 +328,13 @@ export class HttpServer {
     }
     if (url === '/api/category/qr-keyword/update') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
-      return this._ok(res, { updated: db.setCategoryQRKeywordRecallOnly(+d.categoryId, String(d.keyword), d.recallOnly ? 1 : 0) })
+      const _cqopts = {}
+      if (d.doRecall     !== undefined) _cqopts.doRecall     = d.doRecall     ? 1 : 0
+      if (d.recallOnly   !== undefined) _cqopts.recallOnly   = d.recallOnly   ? 1 : 0
+      if (d.doKick       !== undefined) _cqopts.doKick       = d.doKick       ? 1 : 0
+      if (d.doMute       !== undefined) _cqopts.doMute       = d.doMute       ? 1 : 0
+      if (d.muteDuration !== undefined) _cqopts.muteDuration = +d.muteDuration
+      return this._ok(res, { updated: db.updateCategoryQRKeyword(+d.categoryId, String(d.keyword), _cqopts) })
     }
 
     // ── Exempt ──
@@ -430,7 +460,7 @@ export class HttpServer {
     if (url === '/api/category/keyword/add') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
       if (!d.keyword) return this._err(res, 400, '缺少 keyword')
-      return this._ok(res, { added: db.addCategoryKeyword(+d.categoryId, String(d.keyword), sess.username, d.recallOnly ? 1 : 0) })
+      return this._ok(res, { added: db.addCategoryKeyword(+d.categoryId, String(d.keyword), sess.username, { doRecall: d.doRecall !== undefined ? (d.doRecall ? 1 : 0) : 1, recallOnly: d.recallOnly ? 1 : 0, doKick: d.doKick ? 1 : 0, doMute: d.doMute ? 1 : 0, muteDuration: d.muteDuration ?? 600 }) })
     }
     if (url === '/api/category/keyword/remove') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
@@ -438,7 +468,13 @@ export class HttpServer {
     }
     if (url === '/api/category/keyword/update') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
-      return this._ok(res, { updated: db.setCategoryKeywordRecallOnly(+d.categoryId, String(d.keyword), d.recallOnly ? 1 : 0) })
+      const _ckopts = {}
+      if (d.doRecall     !== undefined) _ckopts.doRecall     = d.doRecall     ? 1 : 0
+      if (d.recallOnly   !== undefined) _ckopts.recallOnly   = d.recallOnly   ? 1 : 0
+      if (d.doKick       !== undefined) _ckopts.doKick       = d.doKick       ? 1 : 0
+      if (d.doMute       !== undefined) _ckopts.doMute       = d.doMute       ? 1 : 0
+      if (d.muteDuration !== undefined) _ckopts.muteDuration = +d.muteDuration
+      return this._ok(res, { updated: db.updateCategoryKeyword(+d.categoryId, String(d.keyword), _ckopts) })
     }
 
     // ── User → Category authorization (superadmin only) ──

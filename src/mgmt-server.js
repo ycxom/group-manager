@@ -15,9 +15,9 @@ import { WebSocketServer } from 'ws'
  *
  * ── 关键词（groupId=0 表示全局）────────────────────────────────────
  *   keyword.list    { groupId }
- *   keyword.add     { groupId, keyword, recallOnly? }
+ *   keyword.add     { groupId, keyword, recallOnly?, doKick?, doMute?, muteDuration? }
  *   keyword.remove  { groupId, keyword }
- *   keyword.update  { groupId, keyword, recallOnly }
+ *   keyword.update  { groupId, keyword, recallOnly?, doKick?, doMute?, muteDuration? }
  *
  * ── 豁免用户 ──────────────────────────────────────────────────────
  *   exempt.list     { groupId }
@@ -25,15 +25,18 @@ import { WebSocketServer } from 'ws'
  *   exempt.remove   { groupId, userId }
  *
  * ── 违规记录 ──────────────────────────────────────────────────────
- *   violation.list  { groupId? }
- *   violation.clear { userId, groupId? }
+ *   violation.list    { groupId? }
+ *   violation.clear   { userId, groupId? }
+ *   violation.logs    { userId, groupId? }           每次触发的详细日志
+ *   violation.history { userId, groupId }            入群提醒：该群及同组历史
  *
  * ── 配置 ──────────────────────────────────────────────────────────
  *   config.get
  *
  * ── Bot 适配器 ────────────────────────────────────────────────────
  *   event.message { groupId, userId, senderRole, messageId, segments }
- *   → { action:'noop'|'reply'|'recall'|'recall+kick', text?, messageId?, kickGroups? }
+ *   → { action:'noop'|'reply'|'recall'|'kick'|'mute'|'recall+kick'|'recall+mute'|
+ *         'kick+mute'|'recall+kick+mute', text?, messageId?, kickGroups?, muteGroups?, muteDuration? }
  *
  * ── 推送事件（认证后自动接收）────────────────────────────────────
  *   { event:{ type:'recall', groupId, userId, content, violations } }
@@ -163,11 +166,10 @@ export class ManagementServer {
     }
     if (cmd === 'group.settings.set') {
       if (!msg.groupId) return this._reply(ws, false, '缺少 groupId', _id)
-      const g = db.getGroup(Number(msg.groupId)) || {}
-      db.upsertGroup(Number(msg.groupId), {
-        enabled:        msg.enabled        ?? g.enabled ?? 1,
-        max_violations: msg.maxViolations  ?? g.max_violations ?? 3
-      })
+      const fields = {}
+      if (msg.enabled       !== undefined) fields.enabled        = msg.enabled ? 1 : 0
+      if (msg.maxViolations !== undefined) fields.max_violations = Number(msg.maxViolations)
+      db.upsertGroup(Number(msg.groupId), fields)
       return this._reply(ws, true, { ok: true }, _id)
     }
 
@@ -179,7 +181,8 @@ export class ManagementServer {
     if (cmd === 'keyword.add') {
       if (!msg.keyword) return this._reply(ws, false, '缺少 keyword', _id)
       const gid = msg.groupId !== undefined ? Number(msg.groupId) : 0
-      return this._reply(ws, true, { added: db.addKeyword(gid, String(msg.keyword), null, msg.recallOnly ? 1 : 0) }, _id)
+      const opts = { doRecall: msg.doRecall !== undefined ? (msg.doRecall ? 1 : 0) : 1, recallOnly: msg.recallOnly ? 1 : 0, doKick: msg.doKick ? 1 : 0, doMute: msg.doMute ? 1 : 0, muteDuration: msg.muteDuration ?? 600 }
+      return this._reply(ws, true, { added: db.addKeyword(gid, String(msg.keyword), null, opts) }, _id)
     }
     if (cmd === 'keyword.remove') {
       if (!msg.keyword) return this._reply(ws, false, '缺少 keyword', _id)
@@ -189,7 +192,13 @@ export class ManagementServer {
     if (cmd === 'keyword.update') {
       if (!msg.keyword) return this._reply(ws, false, '缺少 keyword', _id)
       const gid = msg.groupId !== undefined ? Number(msg.groupId) : 0
-      return this._reply(ws, true, { updated: db.setKeywordRecallOnly(gid, String(msg.keyword), msg.recallOnly ? 1 : 0) }, _id)
+      const opts = {}
+      if (msg.doRecall     !== undefined) opts.doRecall     = msg.doRecall     ? 1 : 0
+      if (msg.recallOnly   !== undefined) opts.recallOnly   = msg.recallOnly   ? 1 : 0
+      if (msg.doKick       !== undefined) opts.doKick       = msg.doKick       ? 1 : 0
+      if (msg.doMute       !== undefined) opts.doMute       = msg.doMute       ? 1 : 0
+      if (msg.muteDuration !== undefined) opts.muteDuration = Number(msg.muteDuration)
+      return this._reply(ws, true, { updated: db.updateKeyword(gid, String(msg.keyword), opts) }, _id)
     }
 
     // ── 豁免用户 ──
@@ -219,6 +228,15 @@ export class ManagementServer {
       db.clearViolation(Number(msg.userId), gid)
       return this._reply(ws, true, { cleared: true }, _id)
     }
+    if (cmd === 'violation.logs') {
+      if (!msg.userId) return this._reply(ws, false, '缺少 userId', _id)
+      const gid = msg.groupId !== undefined ? Number(msg.groupId) : null
+      return this._reply(ws, true, { logs: db.listViolationLogs(Number(msg.userId), gid) }, _id)
+    }
+    if (cmd === 'violation.history') {
+      if (!msg.userId || !msg.groupId) return this._reply(ws, false, '缺少 userId 或 groupId', _id)
+      return this._reply(ws, true, db.getRelevantViolationHistory(Number(msg.userId), Number(msg.groupId)), _id)
+    }
 
     // ── 配置 ──
     if (cmd === 'config.get') {
@@ -232,20 +250,30 @@ export class ManagementServer {
     return this._reply(ws, false, `未知命令: ${cmd}`, _id)
   }
 
-  // 根据 action 构建发给 bot 的结果（含 kickGroups 计算）
+  // 根据 action 构建发给 bot 的结果（含 kickGroups / muteGroups 计算）
   _buildBotResult(action) {
-    const result = { action: action.action, messageId: action.messageId, groupId: action.groupId, userId: action.userId }
-    if (action.action === 'recall+kick') {
+    const result = {
+      action:       action.action,
+      messageId:    action.messageId,
+      groupId:      action.groupId,
+      userId:       action.userId,
+      muteDuration: action.muteDuration,
+    }
+    const doKick = action.action?.includes('kick')
+    const doMute = action.action?.includes('mute')
+    if (doKick || doMute) {
       const catIds = this.db.getGroupCategoryIds(action.groupId)
+      let groupSet
       if (catIds.length > 0) {
-        const kickSet = new Set()
+        groupSet = new Set()
         for (const catId of catIds) {
-          for (const g of this.db.getCategoryGroups(catId)) kickSet.add(g.group_id)
+          for (const g of this.db.getCategoryGroups(catId)) groupSet.add(g.group_id)
         }
-        result.kickGroups = [...kickSet]
       } else {
-        result.kickGroups = [action.groupId]
+        groupSet = new Set([action.groupId])
       }
+      if (doKick) result.kickGroups = [...groupSet]
+      if (doMute) result.muteGroups = [...groupSet]
     }
     return result
   }

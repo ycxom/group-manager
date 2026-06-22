@@ -28,7 +28,11 @@ export interface Keyword {
   group_id?: number;
   category_id?: number;
   keyword: string;
+  do_recall: number;
   recall_only: number;
+  do_kick: number;
+  do_mute: number;
+  mute_duration: number;
   created_by?: string | number | null;
   created_at?: string;
 }

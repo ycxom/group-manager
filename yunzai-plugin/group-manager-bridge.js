@@ -48,25 +48,8 @@ function _connect() {
     if (msg.event) {
       const ev = msg.event
       if (ev.type === 'action') {
-        // 图片异步分析完成后由服务端推送的撤回/踢出指令
-        if (ev.action === 'recall' || ev.action === 'recall+kick') {
-          try {
-            await Bot.pickGroup(ev.groupId).recallMsg(ev.messageId)
-            console.log(`[GM桥接] 异步撤回 群${ev.groupId} 用户${ev.userId}`)
-          } catch (err) {
-            console.error('[GM桥接] 异步撤回失败:', err.message)
-          }
-          if (ev.action === 'recall+kick') {
-            for (const gid of (ev.kickGroups || [])) {
-              try {
-                await Bot.pickGroup(gid).kickMember(ev.userId)
-                console.log(`[GM桥接] 异步踢出 群${gid} 用户${ev.userId}`)
-              } catch (err) {
-                console.error(`[GM桥接] 异步踢出失败 群${gid}:`, err.message)
-              }
-            }
-          }
-        }
+        // 图片异步分析完成后由服务端推送的处置指令
+        await _applyActions(ev)
       } else if (ev.type === 'recall') {
         console.log(`[GM桥接] 撤回 群${ev.groupId} 用户${ev.userId} 第${ev.violations}次`)
       } else if (ev.type === 'kick') {
@@ -84,8 +67,98 @@ function _connect() {
   _ws.on('error', (e) => console.error('[GM桥接] WS 错误:', e.message))
 }
 
+/** 统一执行处置动作（撤回 / 禁言 / 踢出），供同步和异步两条路径复用 */
+async function _applyActions(data) {
+  const act  = data.action || ''
+  const uid  = data.userId
+  const dur  = data.muteDuration || 600
+
+  if (act.includes('recall') && data.messageId) {
+    try {
+      await Bot.pickGroup(data.groupId).recallMsg(data.messageId)
+      console.log(`[GM桥接] 撤回 群${data.groupId} 用户${uid}`)
+    } catch (err) {
+      console.error('[GM桥接] 撤回失败:', err.message)
+    }
+  }
+  if (act.includes('mute')) {
+    for (const gid of (data.muteGroups || [])) {
+      try {
+        await Bot.pickGroup(gid).muteMember(uid, dur)
+        console.log(`[GM桥接] 禁言 群${gid} 用户${uid} ${dur}s`)
+      } catch (err) {
+        console.error(`[GM桥接] 禁言失败 群${gid}:`, err.message)
+      }
+    }
+  }
+  if (act.includes('kick')) {
+    for (const gid of (data.kickGroups || [])) {
+      try {
+        await Bot.pickGroup(gid).kickMember(uid)
+        console.log(`[GM桥接] 踢出 群${gid} 用户${uid}`)
+      } catch (err) {
+        console.error(`[GM桥接] 踢出失败 群${gid}:`, err.message)
+      }
+    }
+  }
+}
+
 // Connect once when the module is first loaded
 _connect()
+
+export class GroupManagerNotice extends plugin {
+  constructor() {
+    super({
+      name: '群管-入群检测',
+      dsc: '成员加群时查历史违规并提醒',
+      event: 'notice.group.increase',
+      priority: 9998,
+      rule: [{ reg: '', fnc: 'onMemberJoin', log: false }]
+    })
+  }
+
+  async onMemberJoin(e) {
+    if (!_ready) return false
+    const groupId = e.group_id
+    const userId  = e.user_id
+
+    let history
+    try {
+      history = await _call({ cmd: 'violation.history', userId, groupId })
+    } catch (err) {
+      console.error('[GM桥接] 查询违规历史失败:', err.message)
+      return false
+    }
+
+    if (!history || history.total === 0) return false
+
+    // 按群统计历史触发次数（不展示关键词，防止规避检测）
+    const groupLines = history.groups
+      .map(g => {
+        const cnt = history.logs.filter(l => l.group_id === g.group_id).length
+        if (!cnt) return null
+        const lastLog = history.logs.filter(l => l.group_id === g.group_id).at(-1)
+        const kickInfo = g.archived_at ? `，曾于 ${g.archived_at} 被移出` : ''
+        return `  • 群${g.group_id}：触发 ${cnt} 次${kickInfo}（最近：${lastLog?.triggered_at || '-'}）`
+      })
+      .filter(Boolean)
+      .join('\n')
+
+    const notice = [
+      `⚠️ 【群管提醒】成员 ${userId} 有历史违规记录，共触发 ${history.total} 次，请管理员注意：`,
+      groupLines,
+      '如需查阅完整日志，请登录后台管理界面。'
+    ].join('\n')
+
+    try {
+      await Bot.pickGroup(groupId).sendMsg(notice)
+    } catch (err) {
+      console.error('[GM桥接] 发送入群提示失败:', err.message)
+    }
+
+    return false
+  }
+}
 
 export class GroupManagerBridge extends plugin {
   constructor() {
@@ -160,24 +233,8 @@ export class GroupManagerBridge extends plugin {
       return false
     }
 
-    if (data.action === 'recall' || data.action === 'recall+kick') {
-      try {
-        await e.group.recallMsg(data.messageId)
-        console.log(`[GM桥接] 已撤回 群${data.groupId} 用户${data.userId}`)
-      } catch (err) {
-        console.error('[GM桥接] 撤回失败:', err.message)
-      }
-
-      if (data.action === 'recall+kick') {
-        for (const gid of (data.kickGroups || [])) {
-          try {
-            await Bot.pickGroup(gid).kickMember(data.userId)
-            console.log(`[GM桥接] 已踢出 群${gid} 用户${data.userId}`)
-          } catch (err) {
-            console.error(`[GM桥接] 踢出失败 群${gid}:`, err.message)
-          }
-        }
-      }
+    if (data.action && data.action !== 'noop' && data.action !== 'reply') {
+      await _applyActions(data)
     }
 
     return false

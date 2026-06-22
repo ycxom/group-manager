@@ -2,13 +2,13 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/auth-provider";
 import { api, ApiError, type Keyword } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/select";
 import {
@@ -22,6 +22,7 @@ import {
 
 type KwType = "text" | "ocr" | "qr";
 type Scope = { type: "global" | "group" | "category"; id: number };
+type DFields = { d: number; h: number; m: number; s: number };
 
 const TYPE_LABELS: Record<KwType, string> = {
   text: "文字关键词",
@@ -35,9 +36,216 @@ const API_BASE: Record<KwType, { grp: string; cat: string }> = {
   qr: { grp: "/api/qr-keyword", cat: "/api/category/qr-keyword" },
 };
 
+const MAX_MUTE = 30 * 86400; // 2,592,000 秒
+
 function dt(s?: string) {
   return s ? s.slice(0, 16).replace("T", " ") : "—";
 }
+
+function secsToFields(secs: number): DFields {
+  const s = Math.max(0, Math.floor(secs || 0));
+  return {
+    d: Math.floor(s / 86400),
+    h: Math.floor((s % 86400) / 3600),
+    m: Math.floor((s % 3600) / 60),
+    s: s % 60,
+  };
+}
+
+function fieldsToSecs({ d, h, m, s }: DFields) {
+  return d * 86400 + h * 3600 + m * 60 + s;
+}
+
+function clampField(v: number, max: number) {
+  return Math.max(0, Math.min(max, Math.floor(v) || 0));
+}
+
+// ─── Toggle chip ─────────────────────────────────────────────────────────────
+
+function ToggleChip({
+  checked,
+  disabled,
+  onChange,
+  title,
+  children,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (v: boolean) => void;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "select-none rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+        "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        "disabled:cursor-not-allowed disabled:opacity-40",
+        checked
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-transparent text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ─── Mute duration picker ─────────────────────────────────────────────────────
+
+function MuteDurationInput({
+  value,
+  disabled,
+  onCommit,
+}: {
+  value: number;
+  disabled: boolean;
+  onCommit: (secs: number) => void;
+}) {
+  const [fields, setFields] = React.useState<DFields>(() => secsToFields(value));
+  const [err, setErr] = React.useState("");
+
+  React.useEffect(() => {
+    setFields(secsToFields(value));
+    setErr("");
+  }, [value]);
+
+  function setField(key: keyof DFields, raw: string) {
+    const n = parseInt(raw, 10);
+    setFields((prev) => ({ ...prev, [key]: isNaN(n) || n < 0 ? 0 : n }));
+    setErr("");
+  }
+
+  function commit() {
+    const clamped: DFields = {
+      d: clampField(fields.d, 30),
+      h: clampField(fields.h, 23),
+      m: clampField(fields.m, 59),
+      s: clampField(fields.s, 59),
+    };
+    const total = fieldsToSecs(clamped);
+    if (total <= 0) {
+      setErr("须 > 0");
+      setFields(clamped);
+      return;
+    }
+    if (total > MAX_MUTE) {
+      setErr("超出 30 天");
+      setFields({ d: 30, h: 0, m: 0, s: 0 });
+      return;
+    }
+    setErr("");
+    setFields(clamped);
+    if (total !== value) onCommit(total);
+  }
+
+  const inputCls =
+    "rounded border border-border bg-background text-center font-mono text-xs py-0.5 " +
+    "focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed";
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-0.5",
+        disabled && "pointer-events-none opacity-40",
+      )}
+    >
+      <div className="flex items-center gap-0.5 text-xs text-muted-foreground">
+        <input
+          type="number"
+          min={0}
+          max={30}
+          value={fields.d}
+          onChange={(e) => setField("d", e.target.value)}
+          onBlur={commit}
+          disabled={disabled}
+          className={cn(inputCls, "w-9")}
+        />
+        <span>天</span>
+        <input
+          type="number"
+          min={0}
+          max={23}
+          value={fields.h}
+          onChange={(e) => setField("h", e.target.value)}
+          onBlur={commit}
+          disabled={disabled}
+          className={cn(inputCls, "w-8")}
+        />
+        <span>:</span>
+        <input
+          type="number"
+          min={0}
+          max={59}
+          value={fields.m}
+          onChange={(e) => setField("m", e.target.value)}
+          onBlur={commit}
+          disabled={disabled}
+          className={cn(inputCls, "w-8")}
+        />
+        <span>:</span>
+        <input
+          type="number"
+          min={0}
+          max={59}
+          value={fields.s}
+          onChange={(e) => setField("s", e.target.value)}
+          onBlur={commit}
+          disabled={disabled}
+          className={cn(inputCls, "w-8")}
+        />
+      </div>
+      {err && <span className="text-[10px] text-destructive">{err}</span>}
+    </div>
+  );
+}
+
+// ─── Disposition cell ─────────────────────────────────────────────────────────
+
+function ActionCell({
+  k,
+  onUpdate,
+}: {
+  k: Keyword;
+  onUpdate: (opts: Record<string, unknown>) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <ToggleChip
+        checked={!!k.do_recall}
+        onChange={(v) => onUpdate({ doRecall: v ? 1 : 0 })}
+        title="命中后撤回消息"
+      >
+        撤回
+      </ToggleChip>
+      <ToggleChip
+        checked={!k.recall_only}
+        onChange={(v) => onUpdate({ recallOnly: v ? 0 : 1 })}
+        title="计入违规次数，达上限踢出"
+      >
+        记违规
+      </ToggleChip>
+      <ToggleChip
+        checked={!!k.do_mute}
+        onChange={(v) => onUpdate({ doMute: v ? 1 : 0 })}
+        title="命中后立即禁言（不计违规次数）"
+      >
+        禁言
+      </ToggleChip>
+      <MuteDurationInput
+        value={k.mute_duration ?? 600}
+        disabled={!k.do_mute}
+        onCommit={(secs) => onUpdate({ muteDuration: secs })}
+      />
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function KeywordsPage() {
   const { isSuperadmin, groups, categories } = useAuth();
@@ -46,19 +254,23 @@ export default function KeywordsPage() {
   const [keywords, setKeywords] = React.useState<Keyword[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [newKw, setNewKw] = React.useState("");
-  const [recallOnly, setRecallOnly] = React.useState(false);
+  const [addRecall, setAddRecall] = React.useState(true);
+  const [addViolation, setAddViolation] = React.useState(true);
+  const [addMute, setAddMute] = React.useState(false);
+  const [addDurationSecs, setAddDurationSecs] = React.useState(600);
 
   const freeGroups = React.useMemo(
     () => groups.filter((g) => !g.categories?.length),
     [groups],
   );
 
-  // Default scope once meta is available
   React.useEffect(() => {
     if (scope) return;
     if (isSuperadmin) setScope({ type: "global", id: 0 });
-    else if (categories.length) setScope({ type: "category", id: categories[0].id });
-    else if (freeGroups.length) setScope({ type: "group", id: freeGroups[0].group_id });
+    else if (categories.length)
+      setScope({ type: "category", id: categories[0].id });
+    else if (freeGroups.length)
+      setScope({ type: "group", id: freeGroups[0].group_id });
   }, [scope, isSuperadmin, categories, freeGroups]);
 
   const isCat = scope?.type === "category";
@@ -91,22 +303,33 @@ export default function KeywordsPage() {
   async function add() {
     const kw = newKw.trim();
     if (!kw) return toast.error("请输入关键词");
+    if (addMute && (addDurationSecs <= 0 || addDurationSecs > MAX_MUTE)) {
+      return toast.error("禁言时长不合法（1 秒 ~ 30 天）");
+    }
     try {
-      await api(base + "/add", { ...pkey, keyword: kw, recallOnly });
+      await api(base + "/add", {
+        ...pkey,
+        keyword: kw,
+        doRecall: addRecall ? 1 : 0,
+        recallOnly: addViolation ? 0 : 1,
+        doMute: addMute ? 1 : 0,
+        muteDuration: addDurationSecs,
+      });
       toast.success(`已添加：${kw}`);
       setNewKw("");
-      setRecallOnly(false);
+      setAddRecall(true);
+      setAddViolation(true);
+      setAddMute(false);
+      setAddDurationSecs(600);
       load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "添加失败");
     }
   }
 
-  async function toggle(k: Keyword) {
-    const next = k.recall_only ? 0 : 1;
+  async function update(k: Keyword, opts: Record<string, unknown>) {
     try {
-      await api(base + "/update", { ...pkey, keyword: k.keyword, recallOnly: !!next });
-      toast.success(`「${k.keyword}」已设为${next ? "仅撤回" : "撤回+计违规"}`);
+      await api(base + "/update", { ...pkey, keyword: k.keyword, ...opts });
       load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "更新失败");
@@ -205,21 +428,46 @@ export default function KeywordsPage() {
             onKeyDown={(e) => e.key === "Enter" && add()}
             className="min-w-[180px] flex-1"
           />
-          <label
-            className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
-            title="命中后仅撤回消息，不计入违规、不触发踢人"
-          >
-            <Switch checked={recallOnly} onCheckedChange={setRecallOnly} />
-            仅撤回
-          </label>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ToggleChip
+              checked={addRecall}
+              onChange={setAddRecall}
+              title="命中后撤回消息"
+            >
+              撤回
+            </ToggleChip>
+            <ToggleChip
+              checked={addViolation}
+              onChange={setAddViolation}
+              title="计入违规次数，达上限踢出"
+            >
+              记违规
+            </ToggleChip>
+            <ToggleChip
+              checked={addMute}
+              onChange={setAddMute}
+              title="命中后立即禁言"
+            >
+              禁言
+            </ToggleChip>
+            <MuteDurationInput
+              value={addDurationSecs}
+              disabled={!addMute}
+              onCommit={setAddDurationSecs}
+            />
+          </div>
           <Button onClick={add}>添加</Button>
         </div>
 
         {/* Table */}
         {loading ? (
-          <p className="py-6 text-center text-xs text-muted-foreground">加载中…</p>
+          <p className="py-6 text-center text-xs text-muted-foreground">
+            加载中…
+          </p>
         ) : keywords.length === 0 ? (
-          <p className="py-6 text-center text-xs text-muted-foreground">暂无关键词</p>
+          <p className="py-6 text-center text-xs text-muted-foreground">
+            暂无关键词
+          </p>
         ) : (
           <Table>
             <TableHeader>
@@ -234,29 +482,32 @@ export default function KeywordsPage() {
             <TableBody>
               {keywords.map((k) => (
                 <TableRow key={k.id}>
-                  <TableCell className="font-medium break-all">{k.keyword}</TableCell>
+                  <TableCell className="break-all font-medium">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span>{k.keyword}</span>
+                      {!!k.recall_only && !k.do_recall && !k.do_mute && !k.do_kick && (
+                        <Badge variant="outline" className="px-1.5 py-0 text-[10px] text-muted-foreground">
+                          已停用
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>
-                    {k.recall_only ? (
-                      <Badge variant="warning">仅撤回</Badge>
-                    ) : (
-                      <Badge variant="outline">撤回+计违规</Badge>
-                    )}
+                    <ActionCell k={k} onUpdate={(opts) => update(k, opts)} />
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {k.created_by || "—"}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{dt(k.created_at)}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {dt(k.created_at)}
+                  </TableCell>
                   <TableCell>
-                    <div className="flex justify-end gap-2">
+                    <div className="flex justify-end">
                       <Button
-                        variant="outline"
+                        variant="destructive"
                         size="sm"
-                        onClick={() => toggle(k)}
-                        title="切换该关键词的处置方式"
+                        onClick={() => remove(k)}
                       >
-                        {k.recall_only ? "改为计违规" : "改为仅撤回"}
-                      </Button>
-                      <Button variant="destructive" size="sm" onClick={() => remove(k)}>
                         删除
                       </Button>
                     </div>

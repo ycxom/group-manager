@@ -24,13 +24,25 @@ export class RecallManager {
 
   // ──────── 关键词检测 ────────
 
-  // keywords 元素可为字符串或 { keyword, recall_only }。命中返回 { keyword, recallOnly }，否则 null。
+  // keywords 元素可为字符串或 { keyword, recall_only, do_kick, do_mute, mute_duration }。
   _match(str, keywords) {
     for (const kw of keywords) {
       const word = typeof kw === 'string' ? kw : kw.keyword
-      if (str.includes(word)) return { keyword: word, recallOnly: !!(kw.recall_only) }
+      if (str.includes(word)) return {
+        keyword:      word,
+        doRecall:     kw.do_recall !== undefined ? !!(kw.do_recall) : true,
+        recallOnly:   !!(kw.recall_only),
+        doKick:       !!(kw.do_kick),
+        doMute:       !!(kw.do_mute),
+        muteDuration: kw.mute_duration || 600,
+      }
     }
     return null
+  }
+
+  // 将 _match 结果展开到 result 对象，避免重复
+  _spread(m) {
+    return { keyword: m.keyword, doRecall: m.doRecall, recallOnly: m.recallOnly, doKick: m.doKick, doMute: m.doMute, muteDuration: m.muteDuration }
   }
 
   checkSegment(seg, keywords) {
@@ -38,17 +50,17 @@ export class RecallManager {
       try {
         const obj = JSON.parse(seg.data)
         if (obj.app === 'com.tencent.tuwen.lua') {
-          return { hit: true, content: obj.prompt || 'QQ收藏分享', recallOnly: false }
+          return { hit: true, content: obj.prompt || 'QQ收藏分享', doRecall: true, recallOnly: false, keyword: 'QQ收藏分享', doKick: false, doMute: false, muteDuration: 600 }
         }
         const m = this._match(JSON.stringify(obj), keywords)
-        if (m) return { hit: true, content: obj.prompt || m.keyword, recallOnly: m.recallOnly }
+        if (m) return { hit: true, content: obj.prompt || m.keyword, ...this._spread(m) }
       } catch {}
     }
 
     if (seg.type === 'text') {
       const text = seg.text || ''
       const m = this._match(text, keywords)
-      if (m) return { hit: true, content: text.slice(0, 80), recallOnly: m.recallOnly }
+      if (m) return { hit: true, content: text.slice(0, 80), ...this._spread(m) }
     }
 
     return { hit: false }
@@ -58,7 +70,7 @@ export class RecallManager {
     for (const node of nodes) {
       for (const seg of (node.message || [])) {
         const r = this.checkSegment(seg, keywords)
-        if (r.hit) return { hit: true, content: `[转发] ${r.content}`, recallOnly: r.recallOnly }
+        if (r.hit) return { hit: true, content: `[转发] ${r.content}`, doRecall: r.doRecall, recallOnly: r.recallOnly, keyword: r.keyword, doKick: r.doKick, doMute: r.doMute, muteDuration: r.muteDuration }
       }
     }
     return { hit: false }
@@ -69,23 +81,23 @@ export class RecallManager {
       const r = await analyzeImage(url, rules)
 
       if ((rules.qr_enabled || rules.qr_block_all) && r.qr !== null) {
-        if (rules.qr_block_all) return { hit: true, content: `[QR] ${r.qr.slice(0, 80) || '二维码'}`, recallOnly: false, ocr: r.ocr, qr: r.qr }
+        if (rules.qr_block_all) return { hit: true, content: `[QR] ${r.qr.slice(0, 80) || '二维码'}`, doRecall: true, recallOnly: false, keyword: '[二维码]', doKick: false, doMute: false, muteDuration: 600, ocr: r.ocr, qr: r.qr }
         if (qrKeywords.length) {
           const m = this._match(r.qr, qrKeywords)
-          if (m) return { hit: true, content: `[QR] ${r.qr.slice(0, 80)}`, recallOnly: m.recallOnly, ocr: r.ocr, qr: r.qr }
+          if (m) return { hit: true, content: `[QR] ${r.qr.slice(0, 80)}`, ...this._spread(m), ocr: r.ocr, qr: r.qr }
         }
       }
       if (rules.ocr_enabled && r.ocr) {
         if (ocrKeywords.length) {
           const m = this._match(r.ocr, ocrKeywords)
-          if (m) return { hit: true, content: `[OCR] ${r.ocr.slice(0, 80)}`, recallOnly: m.recallOnly, ocr: r.ocr, qr: r.qr }
+          if (m) return { hit: true, content: `[OCR] ${r.ocr.slice(0, 80)}`, ...this._spread(m), ocr: r.ocr, qr: r.qr }
         }
       }
       if (rules.nsfw_enabled && r.nsfw) {
-        return { hit: true, content: '[涩图] 检测到不当内容', recallOnly: false, ocr: r.ocr, qr: r.qr }
+        return { hit: true, content: '[涩图] 检测到不当内容', doRecall: true, recallOnly: false, keyword: '[NSFW]', doKick: false, doMute: false, muteDuration: 600, ocr: r.ocr, qr: r.qr }
       }
       if (rules.llm_enabled && r.llm?.startsWith('VIOLATION')) {
-        return { hit: true, content: `[LLM] ${r.llm.replace('VIOLATION:', '').trim().slice(0, 80)}`, recallOnly: false, ocr: r.ocr, qr: r.qr }
+        return { hit: true, content: `[LLM] ${r.llm.replace('VIOLATION:', '').trim().slice(0, 80)}`, doRecall: true, recallOnly: false, keyword: '[LLM]', doKick: false, doMute: false, muteDuration: 600, ocr: r.ocr, qr: r.qr }
       }
       return { hit: false, ocr: r.ocr, qr: r.qr }
     } catch (e) {
@@ -104,27 +116,52 @@ export class RecallManager {
     return true
   }
 
+  _buildAction(doRecall, doKick, doMute, messageId, groupId, userId, muteDuration) {
+    const parts = []
+    if (doRecall) parts.push('recall')
+    if (doKick)   parts.push('kick')
+    if (doMute)   parts.push('mute')
+    if (!parts.length) return null
+    return { action: parts.join('+'), messageId, groupId, userId, muteDuration }
+  }
+
   _applyViolation(result, event) {
     const { groupId, userId, messageId } = event
     if (this.config.get('debug', false)) {
-      console.log(`[RecallMgr] DEBUG 群${groupId} 用户${userId}: ${result.content}${result.recallOnly ? ' (仅撤回)' : ''}`)
+      console.log(`[RecallMgr] DEBUG 群${groupId} 用户${userId}: ${result.content}`)
       return null
     }
-    // 仅撤回关键词：撤回消息但不计违规、不踢人
-    if (result.recallOnly) {
+
+    // ① 即时处置：独立于撤回，doKick/doMute 直接执行，绕过违规计数
+    if (result.doKick || result.doMute) {
+      this._emit({ type: 'kick', groupId, userId, violations: 0, immediate: true })
+      return this._buildAction(result.doRecall, result.doKick, result.doMute, messageId, groupId, userId, result.muteDuration || 600)
+    }
+
+    // ② 计违规（与撤回独立）：recall_only=0 时生效，doRecall 控制是否同时撤回
+    if (!result.recallOnly) {
+      const count = this.db.incrementViolation(userId, groupId, result.content, result.keyword || '')
+      this._emit({ type: 'recall', groupId, userId, content: result.content, violations: count, messageId: result.doRecall ? messageId : null })
+      const group = this.db.getGroup(groupId)
+      const max   = group?.max_violations ?? this.config.get('maxViolations', 3)
+      if (count >= max) {
+        this.db.archiveViolation(userId, groupId)
+        this._emit({ type: 'kick', groupId, userId, violations: count })
+        if (result.doRecall) return { action: 'recall+kick', messageId, groupId, userId }
+        return { action: 'kick', messageId: null, groupId, userId }
+      }
+      if (result.doRecall) return { action: 'recall', messageId, groupId, userId }
+      return null // 仅计违规，不撤回
+    }
+
+    // ③ 仅撤回（recall_only=1，不计违规）
+    if (result.doRecall) {
       this._emit({ type: 'recall', groupId, userId, content: result.content, violations: 0, messageId, recallOnly: true })
       return { action: 'recall', messageId, groupId, userId, recallOnly: true }
     }
-    const count = this.db.incrementViolation(userId, groupId, result.content)
-    this._emit({ type: 'recall', groupId, userId, content: result.content, violations: count, messageId })
-    const group = this.db.getGroup(groupId)
-    const max = group?.max_violations ?? this.config.get('maxViolations', 3)
-    if (count >= max) {
-      this.db.clearViolation(userId, groupId)
-      this._emit({ type: 'kick', groupId, userId, violations: count })
-      return { action: 'recall+kick', messageId, groupId, userId }
-    }
-    return { action: 'recall', messageId, groupId, userId }
+
+    // ④ 全部关闭（停用）
+    return null
   }
 
   /** 同步检测：文字 / JSON / 转发消息，不检测图片，毫秒级返回 */
