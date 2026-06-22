@@ -321,6 +321,13 @@ class GM_Database {
     return changed
   }
 
+  setKeywordRecallOnly(groupId, keyword, recallOnly) {
+    this._db.run('UPDATE keywords SET recall_only=? WHERE group_id=? AND keyword=?', [recallOnly ? 1 : 0, groupId, keyword])
+    const changed = this._db.getRowsModified() > 0
+    this._save()
+    return changed
+  }
+
   // ── OCR Keywords ────────────────────────────────────────────────────────
 
   getEffectiveOCRKeywords(groupId) {
@@ -349,6 +356,11 @@ class GM_Database {
     const changed = this._db.getRowsModified() > 0; this._save(); return changed
   }
 
+  setOCRKeywordRecallOnly(groupId, keyword, recallOnly) {
+    this._db.run('UPDATE ocr_keywords SET recall_only=? WHERE group_id=? AND keyword=?', [recallOnly ? 1 : 0, groupId, keyword])
+    const changed = this._db.getRowsModified() > 0; this._save(); return changed
+  }
+
   listCategoryOCRKeywords(categoryId) {
     return this._all('SELECT * FROM category_ocr_keywords WHERE category_id=? ORDER BY created_at', [categoryId])
   }
@@ -360,6 +372,11 @@ class GM_Database {
 
   removeCategoryOCRKeyword(categoryId, keyword) {
     this._db.run('DELETE FROM category_ocr_keywords WHERE category_id=? AND keyword=?', [categoryId, keyword])
+    const changed = this._db.getRowsModified() > 0; this._save(); return changed
+  }
+
+  setCategoryOCRKeywordRecallOnly(categoryId, keyword, recallOnly) {
+    this._db.run('UPDATE category_ocr_keywords SET recall_only=? WHERE category_id=? AND keyword=?', [recallOnly ? 1 : 0, categoryId, keyword])
     const changed = this._db.getRowsModified() > 0; this._save(); return changed
   }
 
@@ -391,6 +408,11 @@ class GM_Database {
     const changed = this._db.getRowsModified() > 0; this._save(); return changed
   }
 
+  setQRKeywordRecallOnly(groupId, keyword, recallOnly) {
+    this._db.run('UPDATE qr_keywords SET recall_only=? WHERE group_id=? AND keyword=?', [recallOnly ? 1 : 0, groupId, keyword])
+    const changed = this._db.getRowsModified() > 0; this._save(); return changed
+  }
+
   listCategoryQRKeywords(categoryId) {
     return this._all('SELECT * FROM category_qr_keywords WHERE category_id=? ORDER BY created_at', [categoryId])
   }
@@ -402,6 +424,11 @@ class GM_Database {
 
   removeCategoryQRKeyword(categoryId, keyword) {
     this._db.run('DELETE FROM category_qr_keywords WHERE category_id=? AND keyword=?', [categoryId, keyword])
+    const changed = this._db.getRowsModified() > 0; this._save(); return changed
+  }
+
+  setCategoryQRKeywordRecallOnly(categoryId, keyword, recallOnly) {
+    this._db.run('UPDATE category_qr_keywords SET recall_only=? WHERE category_id=? AND keyword=?', [recallOnly ? 1 : 0, categoryId, keyword])
     const changed = this._db.getRowsModified() > 0; this._save(); return changed
   }
 
@@ -646,6 +673,13 @@ class GM_Database {
 
   removeCategoryKeyword(categoryId, keyword) {
     this._db.run('DELETE FROM category_keywords WHERE category_id=? AND keyword=?', [categoryId, keyword])
+    const changed = this._db.getRowsModified() > 0
+    this._save()
+    return changed
+  }
+
+  setCategoryKeywordRecallOnly(categoryId, keyword, recallOnly) {
+    this._db.run('UPDATE category_keywords SET recall_only=? WHERE category_id=? AND keyword=?', [recallOnly ? 1 : 0, categoryId, keyword])
     const changed = this._db.getRowsModified() > 0
     this._save()
     return changed

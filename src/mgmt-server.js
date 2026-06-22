@@ -17,6 +17,7 @@ import { WebSocketServer } from 'ws'
  *   keyword.list    { groupId }
  *   keyword.add     { groupId, keyword, recallOnly? }
  *   keyword.remove  { groupId, keyword }
+ *   keyword.update  { groupId, keyword, recallOnly }
  *
  * ── 豁免用户 ──────────────────────────────────────────────────────
  *   exempt.list     { groupId }
@@ -178,6 +179,11 @@ export class ManagementServer {
       if (!msg.keyword) return this._reply(ws, false, '缺少 keyword', _id)
       const gid = msg.groupId !== undefined ? Number(msg.groupId) : 0
       return this._reply(ws, true, { removed: db.removeKeyword(gid, String(msg.keyword)) }, _id)
+    }
+    if (cmd === 'keyword.update') {
+      if (!msg.keyword) return this._reply(ws, false, '缺少 keyword', _id)
+      const gid = msg.groupId !== undefined ? Number(msg.groupId) : 0
+      return this._reply(ws, true, { updated: db.setKeywordRecallOnly(gid, String(msg.keyword), msg.recallOnly ? 1 : 0) }, _id)
     }
 
     // ── 豁免用户 ──

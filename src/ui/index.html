@@ -432,11 +432,16 @@ async function renderKeywords() {
   const tbody=h('tbody')
   kws.forEach(k=>{
     const tr=h('tr')
+    const tgl=h('button',{title:'切换该关键词的处置方式',onclick:async()=>{
+      const next = k.recall_only ? 0 : 1
+      const r = await api(base + '/update', { ...pkey, keyword: k.keyword, recallOnly: !!next })
+      if(r!==null){ showOk(`「${k.keyword}」已设为${next?'仅撤回':'撤回+计违规'}`); renderKeywords() }
+    }}, k.recall_only ? '改为计违规' : '改为仅撤回')
     const rb=h('button',{cls:'danger',onclick:async()=>{
       await api(base + '/remove', { ...pkey, keyword: k.keyword })
       showOk(`已删除: ${k.keyword}`); renderKeywords()
     }},'删除')
-    const td=h('td'); td.appendChild(rb)
+    const td=h('td',{cls:'row',style:'gap:6px'}); td.appendChild(tgl); td.appendChild(rb)
     const action = k.recall_only ? '<span style="color:var(--yellow)">仅撤回</span>' : '撤回+计违规'
     tr.innerHTML=`<td>${k.keyword}</td><td>${action}</td><td>${k.created_by||'—'}</td><td>${dt(k.created_at)}</td>`
     tr.appendChild(td); tbody.appendChild(tr)

@@ -204,6 +204,11 @@ export class HttpServer {
       if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
       return this._ok(res, { removed: db.removeKeyword(gid, String(d.keyword)) })
     }
+    if (url === '/api/keyword/update') {
+      const gid = d.groupId ?? 0
+      if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
+      return this._ok(res, { updated: db.setKeywordRecallOnly(gid, String(d.keyword), d.recallOnly ? 1 : 0) })
+    }
 
     // ── OCR Keywords ──
     if (url === '/api/ocr-keyword/list') {
@@ -222,6 +227,11 @@ export class HttpServer {
       if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
       return this._ok(res, { removed: db.removeOCRKeyword(gid, String(d.keyword)) })
     }
+    if (url === '/api/ocr-keyword/update') {
+      const gid = d.groupId ?? 0
+      if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
+      return this._ok(res, { updated: db.setOCRKeywordRecallOnly(gid, String(d.keyword), d.recallOnly ? 1 : 0) })
+    }
     if (url === '/api/category/ocr-keyword/list') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
       return this._ok(res, { keywords: db.listCategoryOCRKeywords(+d.categoryId) })
@@ -233,6 +243,10 @@ export class HttpServer {
     if (url === '/api/category/ocr-keyword/remove') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
       return this._ok(res, { removed: db.removeCategoryOCRKeyword(+d.categoryId, String(d.keyword)) })
+    }
+    if (url === '/api/category/ocr-keyword/update') {
+      if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
+      return this._ok(res, { updated: db.setCategoryOCRKeywordRecallOnly(+d.categoryId, String(d.keyword), d.recallOnly ? 1 : 0) })
     }
 
     // ── QR Keywords ──
@@ -252,6 +266,11 @@ export class HttpServer {
       if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
       return this._ok(res, { removed: db.removeQRKeyword(gid, String(d.keyword)) })
     }
+    if (url === '/api/qr-keyword/update') {
+      const gid = d.groupId ?? 0
+      if (!this._canAccess(sess, gid)) return this._err(res, 403, '无权访问该群')
+      return this._ok(res, { updated: db.setQRKeywordRecallOnly(gid, String(d.keyword), d.recallOnly ? 1 : 0) })
+    }
     if (url === '/api/category/qr-keyword/list') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
       return this._ok(res, { keywords: db.listCategoryQRKeywords(+d.categoryId) })
@@ -263,6 +282,10 @@ export class HttpServer {
     if (url === '/api/category/qr-keyword/remove') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
       return this._ok(res, { removed: db.removeCategoryQRKeyword(+d.categoryId, String(d.keyword)) })
+    }
+    if (url === '/api/category/qr-keyword/update') {
+      if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
+      return this._ok(res, { updated: db.setCategoryQRKeywordRecallOnly(+d.categoryId, String(d.keyword), d.recallOnly ? 1 : 0) })
     }
 
     // ── Exempt ──
@@ -393,6 +416,10 @@ export class HttpServer {
     if (url === '/api/category/keyword/remove') {
       if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
       return this._ok(res, { removed: db.removeCategoryKeyword(+d.categoryId, String(d.keyword)) })
+    }
+    if (url === '/api/category/keyword/update') {
+      if (!this._canAccessCategory(sess, +d.categoryId)) return this._err(res, 403, '无权访问该组别')
+      return this._ok(res, { updated: db.setCategoryKeywordRecallOnly(+d.categoryId, String(d.keyword), d.recallOnly ? 1 : 0) })
     }
 
     // ── User → Category authorization (superadmin only) ──
