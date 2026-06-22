@@ -15,11 +15,12 @@ CREATE TABLE IF NOT EXISTS groups (
   created_at     TEXT DEFAULT (datetime('now','localtime'))
 );
 CREATE TABLE IF NOT EXISTS keywords (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  group_id   INTEGER DEFAULT 0,
-  keyword    TEXT NOT NULL,
-  created_by INTEGER,
-  created_at TEXT DEFAULT (datetime('now','localtime')),
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id    INTEGER DEFAULT 0,
+  keyword     TEXT NOT NULL,
+  recall_only INTEGER DEFAULT 0,
+  created_by  INTEGER,
+  created_at  TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(group_id, keyword)
 );
 CREATE TABLE IF NOT EXISTS admins (
@@ -71,6 +72,7 @@ CREATE TABLE IF NOT EXISTS category_keywords (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   category_id INTEGER NOT NULL,
   keyword     TEXT NOT NULL,
+  recall_only INTEGER DEFAULT 0,
   created_by  TEXT,
   created_at  TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(category_id, keyword)
@@ -88,33 +90,37 @@ CREATE TABLE IF NOT EXISTS category_exempt_users (
   UNIQUE(category_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS ocr_keywords (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  group_id   INTEGER DEFAULT 0,
-  keyword    TEXT NOT NULL,
-  created_by TEXT,
-  created_at TEXT DEFAULT (datetime('now','localtime')),
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id    INTEGER DEFAULT 0,
+  keyword     TEXT NOT NULL,
+  recall_only INTEGER DEFAULT 0,
+  created_by  TEXT,
+  created_at  TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(group_id, keyword)
 );
 CREATE TABLE IF NOT EXISTS category_ocr_keywords (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   category_id INTEGER NOT NULL,
   keyword     TEXT NOT NULL,
+  recall_only INTEGER DEFAULT 0,
   created_by  TEXT,
   created_at  TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(category_id, keyword)
 );
 CREATE TABLE IF NOT EXISTS qr_keywords (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  group_id   INTEGER DEFAULT 0,
-  keyword    TEXT NOT NULL,
-  created_by TEXT,
-  created_at TEXT DEFAULT (datetime('now','localtime')),
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id    INTEGER DEFAULT 0,
+  keyword     TEXT NOT NULL,
+  recall_only INTEGER DEFAULT 0,
+  created_by  TEXT,
+  created_at  TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(group_id, keyword)
 );
 CREATE TABLE IF NOT EXISTS category_qr_keywords (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   category_id INTEGER NOT NULL,
   keyword     TEXT NOT NULL,
+  recall_only INTEGER DEFAULT 0,
   created_by  TEXT,
   created_at  TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(category_id, keyword)
@@ -168,6 +174,13 @@ export async function createDatabase(filePath) {
   try { db.run("ALTER TABLE image_rules ADD COLUMN ocr_url TEXT DEFAULT ''") } catch {}
   try { db.run("ALTER TABLE category_image_rules ADD COLUMN ocr_url TEXT") } catch {}
   try { db.run("ALTER TABLE violations ADD COLUMN last_content TEXT DEFAULT ''") } catch {}
+  // recall_only：命中后仅撤回，不计违规、不踢人
+  try { db.run("ALTER TABLE keywords ADD COLUMN recall_only INTEGER DEFAULT 0") } catch {}
+  try { db.run("ALTER TABLE category_keywords ADD COLUMN recall_only INTEGER DEFAULT 0") } catch {}
+  try { db.run("ALTER TABLE ocr_keywords ADD COLUMN recall_only INTEGER DEFAULT 0") } catch {}
+  try { db.run("ALTER TABLE category_ocr_keywords ADD COLUMN recall_only INTEGER DEFAULT 0") } catch {}
+  try { db.run("ALTER TABLE qr_keywords ADD COLUMN recall_only INTEGER DEFAULT 0") } catch {}
+  try { db.run("ALTER TABLE category_qr_keywords ADD COLUMN recall_only INTEGER DEFAULT 0") } catch {}
 
   const gm = new GM_Database(db, filePath)
   console.log('[DB] SQLite (sql.js) 初始化完成:', filePath)
@@ -257,29 +270,46 @@ class GM_Database {
 
   // ── Keywords ────────────────────────────────────────────────────────────
 
+  /**
+   * 合并去重多来源关键词行，返回 [{ keyword, recall_only }]。
+   * 同一关键词在多个来源出现时，“计违规”（recall_only=0）优先于“仅撤回”，避免误降级执法力度。
+   */
+  _mergeKeywords(rows) {
+    const map = new Map()
+    for (const r of rows) {
+      const ro = r.recall_only ? 1 : 0
+      if (map.has(r.keyword)) {
+        map.set(r.keyword, { keyword: r.keyword, recall_only: map.get(r.keyword).recall_only && ro ? 1 : 0 })
+      } else {
+        map.set(r.keyword, { keyword: r.keyword, recall_only: ro })
+      }
+    }
+    return [...map.values()].sort((a, b) => (a.keyword < b.keyword ? -1 : a.keyword > b.keyword ? 1 : 0))
+  }
+
   getEffectiveKeywords(groupId) {
     const fromKw = this._all(
-      'SELECT DISTINCT keyword FROM keywords WHERE group_id = 0 OR group_id = ?',
+      'SELECT keyword, recall_only FROM keywords WHERE group_id = 0 OR group_id = ?',
       [groupId]
-    ).map(r => r.keyword)
+    )
     const fromCat = this._all(`
-      SELECT DISTINCT ck.keyword FROM category_keywords ck
+      SELECT ck.keyword, ck.recall_only FROM category_keywords ck
       JOIN group_category gc ON gc.category_id = ck.category_id
       WHERE gc.group_id = ?
-    `, [groupId]).map(r => r.keyword)
-    return [...new Set([...fromKw, ...fromCat])].sort()
+    `, [groupId])
+    return this._mergeKeywords([...fromKw, ...fromCat])
   }
 
   listKeywords(groupId) {
     return this._all(
-      'SELECT id, group_id, keyword, created_by, created_at FROM keywords WHERE group_id = ? ORDER BY created_at',
+      'SELECT id, group_id, keyword, recall_only, created_by, created_at FROM keywords WHERE group_id = ? ORDER BY created_at',
       [groupId]
     )
   }
 
-  addKeyword(groupId, keyword, createdBy = null) {
+  addKeyword(groupId, keyword, createdBy = null, recallOnly = 0) {
     try {
-      this._run('INSERT INTO keywords (group_id, keyword, created_by) VALUES (?, ?, ?)', [groupId, keyword, createdBy])
+      this._run('INSERT INTO keywords (group_id, keyword, recall_only, created_by) VALUES (?, ?, ?, ?)', [groupId, keyword, recallOnly ? 1 : 0, createdBy])
       return true
     } catch { return false }
   }
@@ -295,22 +325,22 @@ class GM_Database {
 
   getEffectiveOCRKeywords(groupId) {
     const fromKw = this._all(
-      'SELECT DISTINCT keyword FROM ocr_keywords WHERE group_id = 0 OR group_id = ?', [groupId]
-    ).map(r => r.keyword)
+      'SELECT keyword, recall_only FROM ocr_keywords WHERE group_id = 0 OR group_id = ?', [groupId]
+    )
     const fromCat = this._all(`
-      SELECT DISTINCT ck.keyword FROM category_ocr_keywords ck
+      SELECT ck.keyword, ck.recall_only FROM category_ocr_keywords ck
       JOIN group_category gc ON gc.category_id = ck.category_id
       WHERE gc.group_id = ?
-    `, [groupId]).map(r => r.keyword)
-    return [...new Set([...fromKw, ...fromCat])].sort()
+    `, [groupId])
+    return this._mergeKeywords([...fromKw, ...fromCat])
   }
 
   listOCRKeywords(groupId) {
     return this._all('SELECT * FROM ocr_keywords WHERE group_id=? ORDER BY created_at', [groupId])
   }
 
-  addOCRKeyword(groupId, keyword, createdBy = null) {
-    try { this._run('INSERT INTO ocr_keywords (group_id, keyword, created_by) VALUES (?,?,?)', [groupId, keyword, createdBy]); return true }
+  addOCRKeyword(groupId, keyword, createdBy = null, recallOnly = 0) {
+    try { this._run('INSERT INTO ocr_keywords (group_id, keyword, recall_only, created_by) VALUES (?,?,?,?)', [groupId, keyword, recallOnly ? 1 : 0, createdBy]); return true }
     catch { return false }
   }
 
@@ -323,8 +353,8 @@ class GM_Database {
     return this._all('SELECT * FROM category_ocr_keywords WHERE category_id=? ORDER BY created_at', [categoryId])
   }
 
-  addCategoryOCRKeyword(categoryId, keyword, createdBy = null) {
-    try { this._run('INSERT INTO category_ocr_keywords (category_id, keyword, created_by) VALUES (?,?,?)', [categoryId, keyword, createdBy]); return true }
+  addCategoryOCRKeyword(categoryId, keyword, createdBy = null, recallOnly = 0) {
+    try { this._run('INSERT INTO category_ocr_keywords (category_id, keyword, recall_only, created_by) VALUES (?,?,?,?)', [categoryId, keyword, recallOnly ? 1 : 0, createdBy]); return true }
     catch { return false }
   }
 
@@ -337,22 +367,22 @@ class GM_Database {
 
   getEffectiveQRKeywords(groupId) {
     const fromKw = this._all(
-      'SELECT DISTINCT keyword FROM qr_keywords WHERE group_id = 0 OR group_id = ?', [groupId]
-    ).map(r => r.keyword)
+      'SELECT keyword, recall_only FROM qr_keywords WHERE group_id = 0 OR group_id = ?', [groupId]
+    )
     const fromCat = this._all(`
-      SELECT DISTINCT ck.keyword FROM category_qr_keywords ck
+      SELECT ck.keyword, ck.recall_only FROM category_qr_keywords ck
       JOIN group_category gc ON gc.category_id = ck.category_id
       WHERE gc.group_id = ?
-    `, [groupId]).map(r => r.keyword)
-    return [...new Set([...fromKw, ...fromCat])].sort()
+    `, [groupId])
+    return this._mergeKeywords([...fromKw, ...fromCat])
   }
 
   listQRKeywords(groupId) {
     return this._all('SELECT * FROM qr_keywords WHERE group_id=? ORDER BY created_at', [groupId])
   }
 
-  addQRKeyword(groupId, keyword, createdBy = null) {
-    try { this._run('INSERT INTO qr_keywords (group_id, keyword, created_by) VALUES (?,?,?)', [groupId, keyword, createdBy]); return true }
+  addQRKeyword(groupId, keyword, createdBy = null, recallOnly = 0) {
+    try { this._run('INSERT INTO qr_keywords (group_id, keyword, recall_only, created_by) VALUES (?,?,?,?)', [groupId, keyword, recallOnly ? 1 : 0, createdBy]); return true }
     catch { return false }
   }
 
@@ -365,8 +395,8 @@ class GM_Database {
     return this._all('SELECT * FROM category_qr_keywords WHERE category_id=? ORDER BY created_at', [categoryId])
   }
 
-  addCategoryQRKeyword(categoryId, keyword, createdBy = null) {
-    try { this._run('INSERT INTO category_qr_keywords (category_id, keyword, created_by) VALUES (?,?,?)', [categoryId, keyword, createdBy]); return true }
+  addCategoryQRKeyword(categoryId, keyword, createdBy = null, recallOnly = 0) {
+    try { this._run('INSERT INTO category_qr_keywords (category_id, keyword, recall_only, created_by) VALUES (?,?,?,?)', [categoryId, keyword, recallOnly ? 1 : 0, createdBy]); return true }
     catch { return false }
   }
 
@@ -609,8 +639,8 @@ class GM_Database {
     )
   }
 
-  addCategoryKeyword(categoryId, keyword, createdBy = null) {
-    try { this._run('INSERT INTO category_keywords (category_id, keyword, created_by) VALUES (?, ?, ?)', [categoryId, keyword, createdBy]); return true }
+  addCategoryKeyword(categoryId, keyword, createdBy = null, recallOnly = 0) {
+    try { this._run('INSERT INTO category_keywords (category_id, keyword, recall_only, created_by) VALUES (?, ?, ?, ?)', [categoryId, keyword, recallOnly ? 1 : 0, createdBy]); return true }
     catch { return false }
   }
 

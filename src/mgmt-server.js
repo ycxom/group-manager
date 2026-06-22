@@ -15,7 +15,7 @@ import { WebSocketServer } from 'ws'
  *
  * ── 关键词（groupId=0 表示全局）────────────────────────────────────
  *   keyword.list    { groupId }
- *   keyword.add     { groupId, keyword }
+ *   keyword.add     { groupId, keyword, recallOnly? }
  *   keyword.remove  { groupId, keyword }
  *
  * ── 豁免用户 ──────────────────────────────────────────────────────
@@ -172,7 +172,7 @@ export class ManagementServer {
     if (cmd === 'keyword.add') {
       if (!msg.keyword) return this._reply(ws, false, '缺少 keyword', _id)
       const gid = msg.groupId !== undefined ? Number(msg.groupId) : 0
-      return this._reply(ws, true, { added: db.addKeyword(gid, String(msg.keyword)) }, _id)
+      return this._reply(ws, true, { added: db.addKeyword(gid, String(msg.keyword), null, msg.recallOnly ? 1 : 0) }, _id)
     }
     if (cmd === 'keyword.remove') {
       if (!msg.keyword) return this._reply(ws, false, '缺少 keyword', _id)
