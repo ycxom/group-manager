@@ -22,6 +22,7 @@ const nextConfig: NextConfig = isDev
     }
   : {
       output: "export",  // 生产：导出纯静态文件到 web/out/
+      turbopack: { root: import.meta.dirname },
     };
 
 export default nextConfig;
