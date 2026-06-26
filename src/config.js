@@ -30,21 +30,46 @@ export class ConfigManager {
   constructor(filePath) {
     this.filePath = filePath
     this.data = this._load()
+    this._watch()
   }
 
   _load() {
-    if (fs.existsSync(this.filePath)) {
+    if (!fs.existsSync(this.filePath)) {
+      const examplePath = this.filePath.replace(/\.json$/, '.example.json')
+      if (fs.existsSync(examplePath)) {
+        fs.copyFileSync(examplePath, this.filePath)
+        console.log(`[Config] 已从 config.example.json 创建 config.json，请修改配置后重启`)
+      } else {
+        this._write(DEFAULTS)
+        console.log(`[Config] 已生成默认配置: ${this.filePath}，请修改后重启`)
+      }
+    }
+    try {
+      const raw = JSON.parse(fs.readFileSync(this.filePath, 'utf8'))
+      return this._merge(DEFAULTS, raw)
+    } catch (e) {
+      console.error('[Config] 加载失败，使用默认配置:', e.message)
+      return structuredClone(DEFAULTS)
+    }
+  }
+
+  _watch() {
+    let timer = null
+    const reload = () => {
+      if (!fs.existsSync(this.filePath)) return
       try {
         const raw = JSON.parse(fs.readFileSync(this.filePath, 'utf8'))
-        return this._merge(DEFAULTS, raw)
+        this.data = this._merge(DEFAULTS, raw)
+        console.log('[Config] 配置已热重载')
       } catch (e) {
-        console.error('[Config] 加载失败，使用默认配置:', e.message)
+        console.error('[Config] 热重载失败:', e.message)
       }
-    } else {
-      this._write(DEFAULTS)
-      console.log(`[Config] 已生成默认配置: ${this.filePath}，请修改后重启`)
     }
-    return structuredClone(DEFAULTS)
+    const watcher = fs.watch(this.filePath, () => {
+      clearTimeout(timer)
+      timer = setTimeout(reload, 300)
+    })
+    watcher.on('error', (e) => console.error('[Config] 文件监听错误:', e.message))
   }
 
   _merge(base, override) {
