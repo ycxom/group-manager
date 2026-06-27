@@ -96,11 +96,28 @@ export class HttpServer {
 
   listen() {
     this.server = createServer((req, res) => this._handle(req, res))
+    this._wsHandlers = new Map()
+    this.server.on('upgrade', (req, socket, head) => {
+      const path = req.url.split('?')[0]
+      const handler = this._wsHandlers.get(path)
+      if (handler) {
+        handler(req, socket, head)
+      } else {
+        socket.write('HTTP/1.1 404 Not Found\r\n\r\n')
+        socket.destroy()
+      }
+    })
     this.server.on('error', (e) => console.error(`[UI] HTTP 服务启动失败: ${e.message}`))
     this.server.listen(this.uiPort, '::', () => {
       console.log(`[UI] 管理界面: http://localhost:${this.uiPort}  (all interfaces :: ${this.uiPort})`)
     })
-    return this.server
+    return this
+  }
+
+  addUpgradeHandler(path, wss) {
+    this._wsHandlers.set(path, (req, socket, head) => {
+      wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
+    })
   }
 
   // ── SSE ─────────────────────────────────────────────────────────────────

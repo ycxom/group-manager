@@ -54,9 +54,9 @@ export class ManagementServer {
   }
 
   listen(httpServer) {
-    // httpServer 存在时复用 HTTP 端口，path=/ws；否则独立监听 this.port
     if (httpServer) {
-      this.wss = new WebSocketServer({ server: httpServer, path: '/ws' })
+      this.wss = new WebSocketServer({ noServer: true })
+      httpServer.addUpgradeHandler('/ws', this.wss)
       console.log(`[Mgmt] 管理 WS 已挂载到 HTTP 服务器（路径 /ws）`)
     } else {
       this.wss = new WebSocketServer({ port: this.port, host: '::' })

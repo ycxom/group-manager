@@ -43,20 +43,20 @@ if (db.userCount() === 0) {
   console.log('[Auth] 已创建默认账户 admin/admin，请登录后立即修改密码！')
 }
 
-// Web UI（HTTP REST + SSE）—— 启动并获取共享 HTTP 服务器
+// Web UI（HTTP REST + SSE）—— 启动并获取共享 HTTP 服务器（升级路由由 HttpServer 统一管理）
 const ui = new HttpServer(config, db, recall)
-const httpServer = ui.listen()
+ui.listen()
 
-// 管理 WS 服务端（Bot 适配器专用）—— 挂载到同一 HTTP 服务器，复用端口
+// 管理 WS 服务端 —— 注册到 /ws
 const mgmt = new ManagementServer(config, db, recall)
-mgmt.listen(httpServer)
+mgmt.listen(ui)
 
 // Bot 适配器（forward 模式需要 url；reverse 模式只需 mode 字段）
 const botMode = config.get('bot.mode', 'forward')
 const botUrl  = config.get('bot.url', '')
 if (botMode === 'reverse' || botUrl) {
   const bot = new OneBotAdapter(config.get('bot'), recall)
-  bot.start(httpServer)  // reverse 模式复用 HTTP 端口（路径 /bot）；forward 模式主动连接 botUrl
+  bot.start(ui)  // reverse 模式注册到 /bot；forward 模式主动连接 botUrl
 } else {
   console.log('[Bot] bot.url 未配置且非 reverse 模式，跳过 Bot 连接')
 }

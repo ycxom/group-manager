@@ -48,7 +48,8 @@ export class OneBotAdapter {
   _startReverseServer(httpServer) {
     let wss
     if (httpServer) {
-      wss = new WebSocketServer({ server: httpServer, path: '/bot' })
+      wss = new WebSocketServer({ noServer: true })
+      httpServer.addUpgradeHandler('/bot', wss)
       console.log(`[OneBot] 反向 WS 已挂载到 HTTP 服务器（路径 /bot）`)
     } else {
       const port = this.cfg.reversePort || 8080
