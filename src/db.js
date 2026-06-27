@@ -949,10 +949,14 @@ class GM_Database {
   getImageRules(groupId) {
     const global = this._get('SELECT * FROM image_rules WHERE group_id=0') || {}
     if (!groupId) return global
-    // Prefer category-level overrides for groups that belong to a category
+    // Prefer category-level overrides for groups that belong to a category.
+    // JOIN categories 以过滤孤立的 group_category 行（其 category 已被删除），
+    // 与 isGroupInCategory / getGroupCategoryIds 保持一致，避免把无组别的群
+    // 误判为已加入组别而套用已删除组别的图片规则。
     const catRow = this._get(`
       SELECT cir.* FROM category_image_rules cir
       JOIN group_category gc ON gc.category_id = cir.category_id
+      JOIN categories c ON c.id = gc.category_id
       WHERE gc.group_id = ? LIMIT 1
     `, [groupId])
     const row = catRow || this._get('SELECT * FROM image_rules WHERE group_id=?', [groupId]) || {}

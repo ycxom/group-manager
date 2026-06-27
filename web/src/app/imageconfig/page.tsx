@@ -104,17 +104,24 @@ export default function ImageConfigPage() {
 
   const isGlobal = scopeType === "global";
 
+  // 独立群组 = 未加入任何组别的群。下拉、默认选中、作用域可见性都以此为准，
+  // 避免默认选中一个已加入组别（已从下拉过滤掉）的群，导致保存时被后端拒绝。
+  const independentGroups = React.useMemo(
+    () => groups.filter((g) => !g.categories?.length),
+    [groups],
+  );
+
   // 进入页面时刷新群组/组别列表，防止登录后数据变动导致缓存不一致
   React.useEffect(() => { refreshMeta(); }, [refreshMeta]);
 
   React.useEffect(() => {
-    if (scopeType === "group" && groups.length > 0 && scopeId === 0) {
-      setScopeId(groups[0].group_id);
+    if (scopeType === "group" && independentGroups.length > 0 && scopeId === 0) {
+      setScopeId(independentGroups[0].group_id);
     }
     if (scopeType === "category" && categories.length > 0 && scopeId === 0) {
       setScopeId(categories[0].id);
     }
-  }, [scopeType, groups, categories, scopeId]);
+  }, [scopeType, independentGroups, categories, scopeId]);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -176,7 +183,7 @@ export default function ImageConfigPage() {
               }}
             >
               <option value="global">全局</option>
-              {groups.length > 0 && <option value="group">独立群组</option>}
+              {independentGroups.length > 0 && <option value="group">独立群组</option>}
               {categories.length > 0 && <option value="category">组别</option>}
             </NativeSelect>
           </div>
@@ -188,13 +195,11 @@ export default function ImageConfigPage() {
                 value={String(scopeId)}
                 onChange={(e) => setScopeId(parseInt(e.target.value))}
               >
-                {groups
-                  .filter((g) => !g.categories?.length)
-                  .map((g) => (
-                    <option key={g.group_id} value={String(g.group_id)}>
-                      群 {g.group_id}
-                    </option>
-                  ))}
+                {independentGroups.map((g) => (
+                  <option key={g.group_id} value={String(g.group_id)}>
+                    群 {g.group_id}
+                  </option>
+                ))}
               </NativeSelect>
             </div>
           )}
