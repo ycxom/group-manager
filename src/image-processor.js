@@ -20,8 +20,9 @@ function _getOCRWorker(langs) {
 }
 
 const IMG_FETCH_TIMEOUT = 10_000
+const IMG_FETCH_RETRIES = 2   // 总尝试次数 = 1 + 重试，应对 QQ CDN 偶发失败/超时
 
-async function fetchImage(url) {
+async function _fetchOnce(url) {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), IMG_FETCH_TIMEOUT)
   try {
@@ -36,16 +37,51 @@ async function fetchImage(url) {
   }
 }
 
+async function fetchImage(url) {
+  let lastErr
+  for (let i = 0; i <= IMG_FETCH_RETRIES; i++) {
+    try {
+      return await _fetchOnce(url)
+    } catch (e) {
+      lastErr = e
+      if (i < IMG_FETCH_RETRIES) await new Promise(r => setTimeout(r, 300 * (i + 1)))
+    }
+  }
+  throw lastErr
+}
+
 // ── QR 码 ────────────────────────────────────────────────────────────────────
+// jsQR 单次扫描对图片尺寸敏感：过大的图找不到定位图案、过小的图分辨率不足，
+// 同类二维码会出现"有时识别、有时不识别"。这里按多种尺度 + 灰度预处理多次尝试，
+// 命中即返回，显著提升识别率。
+function _jsqrScan(jsQR, img) {
+  const { data, width, height } = img.bitmap
+  const code = jsQR(new Uint8ClampedArray(data), width, height, { inversionAttempts: 'attemptBoth' })
+  return code?.data || null
+}
+
 async function extractQR(buf) {
   try {
     const jimpMod = await import('jimp')
     const Jimp = jimpMod.Jimp ?? jimpMod.default
-    const img = await Jimp.read(buf)
-    const { data, width, height } = img.bitmap
     const { default: jsQR } = await import('jsqr')
-    const code = jsQR(new Uint8ClampedArray(data), width, height)
-    return code ? code.data : null
+    const base = await Jimp.read(buf)
+    const maxDim = Math.max(base.bitmap.width, base.bitmap.height)
+
+    // 候选尺度：原图 → 缩小（大图）/ 放大（小图），按命中概率排序，命中即停
+    const scales = [1]
+    if (maxDim > 1280) scales.push(1280 / maxDim)        // 大图缩小到 ~1280px
+    if (maxDim > 2400) scales.push(900 / maxDim)         // 超大图再缩一档
+    if (maxDim < 360)  scales.push(2)                    // 小图放大
+
+    for (const s of scales) {
+      const img = s === 1 ? base : base.clone().scale(s)
+      const hit = _jsqrScan(jsQR, img)
+      if (hit) return hit
+    }
+    // 仍未命中：灰度 + 提升对比度再试原图（应对低对比/彩色二维码）
+    const prep = base.clone().greyscale().contrast(0.3)
+    return _jsqrScan(jsQR, prep)
   } catch (e) {
     console.error('[ImageProc] QR 识别失败:', e.message)
     return null

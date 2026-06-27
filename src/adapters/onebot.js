@@ -102,6 +102,9 @@ export class OneBotAdapter {
       const d = seg.data || {}
       if (type === 'text') return { type: 'text', text: d.text || '' }
       if (type === 'json') return { type: 'json', data: d.data || '' }
+      // 图片：OneBot 把 URL 放在 data.url（部分实现仅给 data.file），
+      // 而 RecallManager 期望扁平的 { type:'image', url }，否则 seg.url 为空、图片被跳过
+      if (type === 'image') return { type: 'image', url: d.url || d.file || '' }
       if (type === 'forward') return { type: 'forward', id: d.id || '' }
       // icqqbot/NapCat 合并转发
       if (type === 'multimsg' || type === 'long_msg') return { type, id: d.resid || d.id || '' }
@@ -115,7 +118,7 @@ export class OneBotAdapter {
     // 检测群管命令
     const textSeg = segments.find(s => s.type === 'text')
     if (textSeg?.text?.trimStart().startsWith('#gm ')) {
-      const resp = this.recall.processCommand(textSeg.text.trim(), raw.user_id, raw.sender?.role || 'member')
+      const resp = this.recall.processCommand(textSeg.text.trim(), raw.group_id, raw.user_id, raw.sender?.role || 'member')
       if (resp?.reply) {
         await this.sendGroupMsg(raw.group_id, resp.reply).catch(() => {})
       }
@@ -132,23 +135,55 @@ export class OneBotAdapter {
 
     const action = await this.recall.processMessage(event, (id) => this._getForwardMsg(id))
     if (!action) return
+    await this._applyAction(action)
+  }
 
-    // 撤回消息
-    try {
-      await this.deleteMsg(action.messageId)
-      console.log(`[OneBot] 已撤回 群${action.groupId} 用户${action.userId}`)
-    } catch (e) {
-      console.error('[OneBot] 撤回失败:', e.message)
+  /**
+   * 执行处置动作。action.action 形如 'recall' | 'mute' | 'kick' | 'recall+kick'
+   * | 'recall+mute' | 'kick+mute' 等组合，逐项执行，缺一不可。
+   * 踢/禁的目标群：群已加入组别时扩展到同组别全部群，否则仅当前群
+   * （与 mgmt-server 的 _buildBotResult 保持一致）。
+   */
+  async _applyAction(action) {
+    const act = action.action || ''
+
+    if (act.includes('recall') && action.messageId) {
+      try {
+        await this.deleteMsg(action.messageId)
+        console.log(`[OneBot] 已撤回 群${action.groupId} 用户${action.userId}`)
+      } catch (e) {
+        console.error('[OneBot] 撤回失败:', e.message)
+      }
     }
 
-    // 踢出全部白名单群
-    if (action.action === 'recall+kick') {
-      for (const gid of this.recall.config.get('whitelistGroups', [])) {
+    if (act.includes('mute')) {
+      const dur = action.muteDuration || 600
+      for (const gid of this._targetGroups(action.groupId)) {
+        await this.muteMember(gid, action.userId, dur).catch((e) =>
+          console.error(`[OneBot] 禁言 群${gid} 用户${action.userId} 失败:`, e.message)
+        )
+      }
+    }
+
+    if (act.includes('kick')) {
+      for (const gid of this._targetGroups(action.groupId)) {
         await this.kickMember(gid, action.userId).catch((e) =>
           console.error(`[OneBot] 踢出 群${gid} 用户${action.userId} 失败:`, e.message)
         )
       }
     }
+  }
+
+  /** 群已加入组别 → 同组别全部群；否则仅当前群 */
+  _targetGroups(groupId) {
+    const db = this.recall.db
+    const catIds = db.getGroupCategoryIds(groupId)
+    if (!catIds.length) return [groupId]
+    const set = new Set()
+    for (const catId of catIds) {
+      for (const g of db.getCategoryGroups(catId)) set.add(g.group_id)
+    }
+    return [...set]
   }
 
   // ──────── OneBot API 调用 ────────
@@ -177,6 +212,10 @@ export class OneBotAdapter {
 
   kickMember(groupId, userId, reject = false) {
     return this._call('set_group_kick', { group_id: groupId, user_id: userId, reject_add_request: reject })
+  }
+
+  muteMember(groupId, userId, duration = 600) {
+    return this._call('set_group_ban', { group_id: groupId, user_id: userId, duration })
   }
 
   sendGroupMsg(groupId, text) {
