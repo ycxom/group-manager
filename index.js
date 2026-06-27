@@ -51,13 +51,14 @@ const httpServer = ui.listen()
 const mgmt = new ManagementServer(config, db, recall)
 mgmt.listen(httpServer)
 
-// Bot 适配器（url 为空则跳过）
-const botUrl = config.get('bot.url', '')
-if (botUrl) {
+// Bot 适配器（forward 模式需要 url；reverse 模式只需 mode 字段）
+const botMode = config.get('bot.mode', 'forward')
+const botUrl  = config.get('bot.url', '')
+if (botMode === 'reverse' || botUrl) {
   const bot = new OneBotAdapter(config.get('bot'), recall)
-  bot.start(httpServer)  // reverse 模式同样复用 HTTP 端口（路径 /bot）
+  bot.start(httpServer)  // reverse 模式复用 HTTP 端口（路径 /bot）；forward 模式主动连接 botUrl
 } else {
-  console.log('[Bot] bot.url 未配置，跳过 Bot 连接')
+  console.log('[Bot] bot.url 未配置且非 reverse 模式，跳过 Bot 连接')
 }
 
 console.log('[GroupManager] 启动完成')
