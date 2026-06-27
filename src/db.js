@@ -969,8 +969,12 @@ class GM_Database {
   }
 
   getGroupCategoryIds(groupId) {
-    return this._all('SELECT category_id FROM group_category WHERE group_id=?', [groupId])
-      .map(r => r.category_id)
+    // JOIN categories 以过滤孤立 group_category 行（其 category 已被删除），
+    // 与 listGroups / isGroupInCategory 保持一致，避免向已删除组别派生踢/禁群
+    return this._all(
+      'SELECT gc.category_id FROM group_category gc JOIN categories c ON c.id = gc.category_id WHERE gc.group_id=?',
+      [groupId]
+    ).map(r => r.category_id)
   }
 
   setImageRules(groupId, fields) {
