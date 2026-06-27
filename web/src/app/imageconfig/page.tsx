@@ -95,7 +95,7 @@ function TextRow({
 }
 
 export default function ImageConfigPage() {
-  const { isSuperadmin, groups, categories } = useAuth();
+  const { isSuperadmin, groups, categories, refreshMeta } = useAuth();
   const [scopeType, setScopeType] = React.useState<ScopeType>("global");
   const [scopeId, setScopeId] = React.useState<number>(0);
   const [rules, setRules] = React.useState<ImageRules>({});
@@ -103,6 +103,9 @@ export default function ImageConfigPage() {
   const [saving, setSaving] = React.useState(false);
 
   const isGlobal = scopeType === "global";
+
+  // 进入页面时刷新群组/组别列表，防止登录后数据变动导致缓存不一致
+  React.useEffect(() => { refreshMeta(); }, [refreshMeta]);
 
   React.useEffect(() => {
     if (scopeType === "group" && groups.length > 0 && scopeId === 0) {
