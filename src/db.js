@@ -962,7 +962,10 @@ class GM_Database {
   }
 
   isGroupInCategory(groupId) {
-    return !!this._get('SELECT 1 FROM group_category WHERE group_id=?', [groupId])
+    return !!this._get(
+      'SELECT 1 FROM group_category gc JOIN categories c ON c.id = gc.category_id WHERE gc.group_id=?',
+      [groupId]
+    )
   }
 
   getGroupCategoryIds(groupId) {
