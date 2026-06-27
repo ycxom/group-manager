@@ -139,9 +139,8 @@ export class ManagementServer {
           .then(result => {
             if (result?.action) {
               this._pushToBots({ event: { type: 'action', ...this._buildBotResult(result) } })
-            } else {
-              this.recall._emit({ type: 'scan', groupId, userId, ocr: result?.ocr || null, qr: result?.qr || null })
             }
+            // 图片 scan 事件已由 _checkImage 统一发出（含权限过滤），此处不再重复
           })
           .catch(e => console.error('[Mgmt] 异步图片分析异常:', e.message))
         return

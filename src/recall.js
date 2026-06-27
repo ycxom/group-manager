@@ -76,9 +76,25 @@ export class RecallManager {
     return { hit: false }
   }
 
-  async _checkImage(url, rules, qrKeywords, ocrKeywords) {
+  async _checkImage(url, rules, qrKeywords, ocrKeywords, ctx = {}) {
     try {
       const r = await analyzeImage(url, rules)
+
+      if (this.config.get('debug', false)) {
+        console.log(`[RecallMgr] 图片分析结果: QR=${r.qr === null ? '未识别到二维码' : JSON.stringify(String(r.qr).slice(0, 120))} | OCR=${r.ocr ? JSON.stringify(String(r.ocr).slice(0, 120)) : '空/未识别/服务失败'} | NSFW=${r.nsfw}`)
+      }
+
+      // 将本次图片分析结果送入实时事件（SSE 按 groupId 做权限过滤：
+      // 超管见全部，管理员仅见授权群/组）。带 groupId 才会被过滤与展示。
+      if (ctx.groupId) {
+        this._emit({
+          type:    'scan',
+          groupId: ctx.groupId,
+          userId:  ctx.userId,
+          qr:      r.qr || null,
+          ocr:     r.ocr ? String(r.ocr).slice(0, 200) : null
+        })
+      }
 
       if ((rules.qr_enabled || rules.qr_block_all) && r.qr !== null) {
         if (rules.qr_block_all) return { hit: true, content: `[QR] ${r.qr.slice(0, 80) || '二维码'}`, doRecall: true, recallOnly: false, keyword: '[二维码]', doKick: false, doMute: false, muteDuration: 600, ocr: r.ocr, qr: r.qr }
@@ -110,9 +126,19 @@ export class RecallManager {
 
   _guard(event) {
     const { groupId, userId, senderRole } = event
-    if (!this.db.isGroupEnabled(groupId)) return false
-    if (this.db.isExempt(groupId, userId)) return false
-    if (senderRole === 'admin' || senderRole === 'owner') return false
+    const debug = this.config.get('debug', false)
+    if (!this.db.isGroupEnabled(groupId)) {
+      if (debug) console.log(`[RecallMgr] 跳过 群${groupId}：未在群管启用（请在后台添加并启用该群）`)
+      return false
+    }
+    if (this.db.isExempt(groupId, userId)) {
+      if (debug) console.log(`[RecallMgr] 跳过 群${groupId} 用户${userId}：豁免用户`)
+      return false
+    }
+    if (senderRole === 'admin' || senderRole === 'owner') {
+      if (debug) console.log(`[RecallMgr] 跳过 群${groupId} 用户${userId}：发送者是管理员/群主`)
+      return false
+    }
     return true
   }
 
@@ -194,13 +220,16 @@ export class RecallManager {
     const imageRules  = this.db.getImageRules(groupId)
     const hasImgFeat  = imageRules && (imageRules.qr_enabled || imageRules.qr_block_all ||
                         imageRules.ocr_enabled || imageRules.nsfw_enabled || imageRules.llm_enabled)
-    if (!hasImgFeat) return null
+    if (!hasImgFeat) {
+      if (this.config.get('debug', false)) console.log(`[RecallMgr] 群${groupId} 收到图片但未启用任何图片检测规则（二维码/OCR/NSFW/LLM 全关）`)
+      return null
+    }
 
     let result = { hit: false }
     for (const seg of messages) {
       if (result.hit) break
       if (seg.type === 'image' && seg.url) {
-        result = await this._checkImage(seg.url, imageRules, qrKeywords, ocrKeywords)
+        result = await this._checkImage(seg.url, imageRules, qrKeywords, ocrKeywords, { groupId, userId: event.userId })
       }
     }
     if (!result.hit) return { action: null, ocr: result.ocr || null, qr: result.qr || null }
@@ -221,6 +250,14 @@ export class RecallManager {
     const imageRules  = this.db.getImageRules(groupId)
     const hasImgFeat  = imageRules && (imageRules.qr_enabled || imageRules.qr_block_all ||
                         imageRules.ocr_enabled || imageRules.nsfw_enabled || imageRules.llm_enabled)
+    // debug：收到图片时，打印运行时实际解析到的图片规则，并和「本群原始行」对比，
+    // 用于定位“独立群组配置读不到”——若生效值≠原始行值，说明被全局/组别覆盖了。
+    if (this.config.get('debug', false) && (messages || []).some(s => s.type === 'image')) {
+      const raw = this.db.getImageRulesRaw(groupId)
+      const inCat = this.db.isGroupInCategory(groupId)
+      console.log(`[RecallMgr] 群${groupId} 图片规则解析: 生效[qr=${imageRules.qr_enabled||0} block_all=${imageRules.qr_block_all||0} ocr=${imageRules.ocr_enabled||0} nsfw=${imageRules.nsfw_enabled||0} llm=${imageRules.llm_enabled||0}] | 本群原始行[qr=${raw?.qr_enabled ?? '无'} ocr=${raw?.ocr_enabled ?? '无'}] | 在组别=${inCat} | QR词=${qrKeywords.length} OCR词=${ocrKeywords.length}`)
+      if (!hasImgFeat) console.log(`[RecallMgr] 群${groupId} 上述图片规则全为关 → 图片不会被分析（请确认配置已保存到“独立群组/本群”作用域且已部署最新代码）`)
+    }
     if (keywords.length === 0 && !hasImgFeat) return null
 
     let result = { hit: false }
@@ -230,7 +267,7 @@ export class RecallManager {
         const nodes = seg.nodes?.length ? seg.nodes : (fetchForward ? await fetchForward(seg.id || seg.resid).catch(() => null) : null)
         if (nodes && keywords.length) result = await this._scanNodes(nodes, keywords)
       } else if (seg.type === 'image' && seg.url && hasImgFeat) {
-        result = await this._checkImage(seg.url, imageRules, qrKeywords, ocrKeywords)
+        result = await this._checkImage(seg.url, imageRules, qrKeywords, ocrKeywords, { groupId, userId: event.userId })
       } else {
         if (keywords.length) result = this.checkSegment(seg, keywords)
       }

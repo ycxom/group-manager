@@ -115,6 +115,12 @@ export class OneBotAdapter {
   async _handleGroupMessage(raw) {
     const segments = this._normalizeSegments(raw.message)
 
+    // debug：记录每条收到的群消息，便于确认适配器是否真的收到了消息
+    if (this.recall.config.get('debug', false)) {
+      const kinds = segments.map(s => s.type).join(',') || '空'
+      console.log(`[OneBot] 收到群消息 群${raw.group_id} 用户${raw.user_id} 段[${kinds}]`)
+    }
+
     // 检测群管命令
     const textSeg = segments.find(s => s.type === 'text')
     if (textSeg?.text?.trimStart().startsWith('#gm ')) {
@@ -126,10 +132,10 @@ export class OneBotAdapter {
     }
 
     const event = {
-      groupId: raw.group_id,
-      userId: raw.user_id,
+      groupId: Number(raw.group_id),
+      userId: Number(raw.user_id),
       senderRole: raw.sender?.role || 'member',
-      messageId: raw.message_id,
+      messageId: Number(raw.message_id),
       messages: segments
     }
 
@@ -147,12 +153,19 @@ export class OneBotAdapter {
   async _applyAction(action) {
     const act = action.action || ''
 
-    if (act.includes('recall') && action.messageId) {
-      try {
-        await this.deleteMsg(action.messageId)
-        console.log(`[OneBot] 已撤回 群${action.groupId} 用户${action.userId}`)
-      } catch (e) {
-        console.error('[OneBot] 撤回失败:', e.message)
+    if (act.includes('recall')) {
+      // OneBot v11: message_id 为 number(int32)。null/undefined/0 都是无效值，
+      // 发出去 NapCat 会回 “消息0不存在”。这里严格校验，无效则跳过而非空发。
+      const mid = Number(action.messageId)
+      if (Number.isInteger(mid) && mid !== 0) {
+        try {
+          await this.deleteMsg(mid)
+          console.log(`[OneBot] 已撤回 群${action.groupId} 用户${action.userId}`)
+        } catch (e) {
+          console.error('[OneBot] 撤回失败:', e.message)
+        }
+      } else if (this.recall.config.get('debug', false)) {
+        console.log(`[OneBot] 跳过撤回 群${action.groupId}：message_id 无效 (${action.messageId})`)
       }
     }
 
@@ -207,7 +220,11 @@ export class OneBotAdapter {
   }
 
   deleteMsg(messageId) {
-    return this._call('delete_msg', { message_id: messageId })
+    const mid = Number(messageId)
+    if (!Number.isInteger(mid) || mid === 0) {
+      return Promise.reject(new Error(`无效 message_id: ${messageId}`))
+    }
+    return this._call('delete_msg', { message_id: mid })
   }
 
   kickMember(groupId, userId, reject = false) {
