@@ -220,6 +220,22 @@ export async function createDatabase(filePath) {
     try { db.run(`ALTER TABLE ${tbl} ADD COLUMN do_recall     INTEGER DEFAULT 1`) } catch {}
   }
 
+  // 自愈：清理孤立的 category 关联行（其 categories 记录已被删除）。
+  // 历史上某些删除路径可能残留 group_category 行，导致群被误判为"已加入组别"。
+  let orphansCleaned = false
+  for (const tbl of ['group_category', 'category_keywords', 'category_ocr_keywords',
+                     'category_qr_keywords', 'category_exempt_users', 'user_categories',
+                     'category_image_rules']) {
+    try {
+      db.run(`DELETE FROM ${tbl} WHERE category_id NOT IN (SELECT id FROM categories)`)
+      if (db.getRowsModified() > 0) orphansCleaned = true
+    } catch {}
+  }
+  if (orphansCleaned) {
+    fs.writeFileSync(filePath, Buffer.from(db.export()))
+    console.log('[DB] 已清理孤立的组别关联行')
+  }
+
   const gm = new GM_Database(db, filePath)
   console.log('[DB] SQLite (sql.js) 初始化完成:', filePath)
   return gm
